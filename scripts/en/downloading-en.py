@@ -1,13 +1,13 @@
 # ~ download.py | by ANXETY ~
 
-from webui_utils import handle_setup_timer    # WEBUI
-from CivitaiAPI import CivitAiAPI             # CivitAI API
-from Manager import m_download                # Every Download
-import json_utils as js                       # JSON
+from webui_utils import handle_setup_timer  # WEBUI
+from CivitaiAPI import CivitAiAPI           # CivitAI API
+from Manager import m_download              # Every Download
+import json_utils as js                     # JSON
 
 from IPython.display import clear_output
 from IPython.utils import capture
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse
 from IPython import get_ipython
 from datetime import timedelta
 from pathlib import Path
@@ -21,6 +21,7 @@ import json
 import sys
 import re
 import os
+
 
 CD = os.chdir
 ipySys = get_ipython().system
@@ -38,14 +39,15 @@ ENV_NAME = js.read(SETTINGS_PATH, 'ENVIRONMENT.env_name')
 UI = js.read(SETTINGS_PATH, 'WEBUI.current')
 WEBUI = js.read(SETTINGS_PATH, 'WEBUI.webui_path')
 
+
 # Text Colors (\033)
 class COLORS:
-    R  =  "\033[31m"     # Red
-    G  =  "\033[32m"     # Green
-    Y  =  "\033[33m"     # Yellow
-    B  =  "\033[34m"     # Blue
-    lB =  "\033[36;1m"   # lightBlue
-    X  =  "\033[0m"      # Reset
+    R  =  "\033[31m"      # Red
+    G  =  "\033[32m"      # Green
+    Y  =  "\033[33m"      # Yellow
+    B  =  "\033[34m"      # Blue
+    lB =  "\033[36;1m"    # lightBlue
+    X  =  "\033[0m"       # Reset
 
 COL = COLORS
 
@@ -63,6 +65,7 @@ def install_dependencies(commands):
 def setup_venv(url):
     """Customize the virtual environment using the specified URL."""
     CD(HOME)
+    # url = "https://huggingface.co/NagisaNao/ANXETY/resolve/main/python31017-venv-torch251-cu121-C-fca.tar.lz4"
     fn = Path(url).name
 
     m_download(f"{url} {HOME} {fn}")
@@ -153,6 +156,11 @@ if venv_needs_reinstall:
     # Update latest UI version...
     js.update(SETTINGS_PATH, 'WEBUI.latest', current_ui)
 
+# if not os.path.exists(VENV):
+#     print('♻️ Installing VENV, this will take some time...')
+#     setup_venv()
+#     clear_output()
+
 ## ================ loading settings V5 ==================
 
 def load_settings(path):
@@ -219,12 +227,16 @@ if latest_webui or latest_extensions:
         ## Update Webui
         if latest_webui:
             CD(WEBUI)
+            # ipySys('git restore .')
+            # ipySys('git pull -X theirs --rebase --autostash')
+
             ipySys('git stash push --include-untracked')
             ipySys('git pull --rebase')
             ipySys('git stash pop')
 
         ## Update extensions
         if latest_extensions:
+            # ipySys('{\'for dir in \' + WEBUI + \'/extensions/*/; do cd \\'$dir\\' && git reset --hard && git pull; done\'}')
             for entry in os.listdir(f"{WEBUI}/extensions"):
                 dir_path = f"{WEBUI}/extensions/{entry}"
                 if os.path.isdir(dir_path):
@@ -237,7 +249,7 @@ if latest_webui or latest_extensions:
 # === FIXING EXTENSIONS ===
 with capture.capture_output():
     # --- Umi-Wildcard ---
-    ipySys(f"sed -i '521s/open=\\(False\\|True\\)/open=False/' {WEBUI}/extensions/Umi-AI-Wildcards/scripts/wildcard_recursive.py")    # Closed accordion by default
+    ipySys("sed -i '521s/open=\\(False\\|True\\)/open=False/' {WEBUI}/extensions/Umi-AI-Wildcards/scripts/wildcard_recursive.py")    # Closed accordion by default
 
 
 ## Version switching
@@ -370,6 +382,7 @@ def handle_gdrive(mount_flag, log=False):
 
 handle_gdrive(mountGDrive)
 
+
 # Get XL or 1.5 models list
 ## model_list | vae_list | controlnet_list
 model_files = '_xl-models-data.py' if XL_models else '_models-data.py'
@@ -429,187 +442,170 @@ def format_output(url, dst_dir, file_name, image_url=None, image_name=None):
 ''' Main Download Code '''
 
 def _clean_url(url):
-    parsed_url = urlparse(url)
-    if 'huggingface.co' in parsed_url.netloc:
-        return url.replace('/blob/', '/resolve/').split('?')[0]
-    elif 'github.com' in parsed_url.netloc:
-        return url.replace('/blob/', '/raw/')
-    return url.split('?')[0] # Remove query parameters for generic URLs
+    url_cleaners = {
+        'huggingface.co': lambda u: u.replace('/blob/', '/resolve/').split('?')[0],
+        'github.com': lambda u: u.replace('/blob/', '/raw/')
+    }
+    for domain, cleaner in url_cleaners.items():
+        if domain in url:
+            return cleaner(url)
+    return url
 
-def _extract_filename_from_url(url):
-    parsed_url = urlparse(url)
-    filename = Path(unquote(parsed_url.path)).name
-    if filename:
-        return filename
-    return None
-
-def _get_download_info(original_url, desired_filename=None, suggested_prefix=None):
-    """
-    Analyzes the URL to determine download type, actual URL, target directory, and filename.
-    Returns: (download_url, target_dir, filename, image_url, image_name, is_extension)
-    """
-    clean_url = _clean_url(original_url)
-    parsed_url = urlparse(clean_url)
-    netloc = parsed_url.netloc
-
-    target_dir = None
-    file_name = desired_filename
-    image_url = None
-    image_name = None
-    is_extension = False
-
-    # 1. Handle prefixed URLs (e.g., 'model:https://...')
-    if suggested_prefix and suggested_prefix in PREFIX_MAP:
-        target_dir = PREFIX_MAP[suggested_prefix][0]
-        if suggested_prefix == 'extension':
-            is_extension = True
-        if not file_name:
-            file_name = _extract_filename_from_url(clean_url)
-
-    # 2. Civitai API
-    if 'civitai.com' in netloc:
-        try:
-            api = CivitAiAPI(civitai_token)
-            data = api.validate_download(original_url, desired_filename)
-            if data:
-                download_url = data.download_url
-                file_name = data.model_name
-                image_url = data.image_url
-                image_name = data.image_name
-                # Determine target_dir based on model_type from Civitai if not already set by prefix
-                if not target_dir:
-                    if data.model_type == 'Checkpoint':
-                        target_dir = model_dir
-                    elif data.model_type == 'VAE':
-                        target_dir = vae_dir
-                    elif data.model_type == 'LORA':
-                        target_dir = lora_dir
-                    elif data.model_type == 'TextualInversion':
-                        target_dir = embed_dir
-                    elif data.model_type == 'Controlnet':
-                        target_dir = control_dir
-                    elif data.model_type == 'LoCon':
-                        target_dir = lora_dir # LoCon is a type of LoRA
-                    else:
-                        target_dir = model_dir # Default if unknown
-
-                return download_url, target_dir, file_name, image_url, image_name, is_extension
-        except Exception as e:
-            print(f"{COL.R}Error with Civitai API for {original_url}: {e}{COL.X}")
-
-    # 3. Hugging Face and GitHub (already cleaned by _clean_url)
-    elif 'huggingface.co' in netloc or 'github.com' in netloc:
-        if not file_name:
-            file_name = _extract_filename_from_url(clean_url)
-        # Attempt to infer target_dir if not set by prefix
-        if not target_dir:
-            if any(ext in file_name for ext in ['.safetensors', '.ckpt', '.pt']):
-                target_dir = model_dir
-            elif 'vae' in file_name.lower():
-                target_dir = vae_dir
-            elif 'lora' in file_name.lower():
-                target_dir = lora_dir
-            elif 'embeddings' in clean_url or 'embed' in file_name.lower():
-                target_dir = embed_dir
-            elif 'controlnet' in clean_url or 'cnet' in file_name.lower():
-                target_dir = control_dir
-            else:
-                target_dir = model_dir # Default fallback
-
-        return clean_url, target_dir, file_name, None, None, is_extension
-
-    # 4. Generic URL
-    if not file_name:
-        file_name = _extract_filename_from_url(clean_url)
-
-    # If target_dir is still None, default to a general downloads directory or model_dir
-    if not target_dir:
-        target_dir = model_dir # Or a more generic 'downloads_dir' if you create one
-
-    return clean_url, target_dir, file_name, None, None, is_extension
+def _extract_filename(url, default_filename=None):
+    """Extracts filename from URL or from [filename] tag. If not found, uses default_filename."""
+    if match := re.search(r'\[(.*?)\]', url):
+        return match.group(1)
+    if any(d in urlparse(url).netloc for d in ["civitai.com", "drive.google.com"]):
+        return default_filename # Let CivitaiAPI or m_download handle it
+    return Path(urlparse(url).path).name
 
 def _unpack_zips():
     """Recursively extract and delete all .zip files in PREFIX_MAP directories."""
     for dir_path, _ in PREFIX_MAP.values():
         for zip_file in Path(dir_path).rglob('*.zip'):
-            try:
-                print(f"📦 Extracting {zip_file.name}...")
-                with zipfile.ZipFile(zip_file, 'r') as zf:
-                    zf.extractall(zip_file.with_suffix(''))
-                zip_file.unlink()
-                print(f"🗑️ Deleted {zip_file.name}.")
-            except zipfile.BadZipFile:
-                print(f"{COL.R}Warning: {zip_file.name} is a bad zip file, skipping extraction.{COL.X}")
-            except Exception as e:
-                print(f"{COL.R}Error extracting {zip_file.name}: {e}{COL.X}")
+            with zipfile.ZipFile(zip_file, 'r') as zf:
+                # Extract to a subdirectory with the same name as the zip file (without .zip)
+                extract_path = zip_file.with_suffix('')
+                os.makedirs(extract_path, exist_ok=True) # Ensure the directory exists
+                zf.extractall(extract_path)
+            zip_file.unlink()
 
-def manual_download(url, dst_dir, file_name=None, image_url=None, image_name=None):
-    """Performs the actual download using m_download."""
-    format_output(url, dst_dir, file_name, image_url, image_name)
-    m_download(f"{url} {dst_dir} {file_name or ''}", log=True)
+# Download Core
+
+def _process_download_link(link):
+    """
+    Processes a download link, splitting prefix, URL, and filename.
+    Handles general URLs by assigning them to a 'general' directory.
+    """
+    link = _clean_url(link)
+    # Check for explicit prefix: syntax
+    if ':' in link and link.split(':', 1)[0] in PREFIX_MAP:
+        prefix, path = link.split(':', 1)
+        # Remove filename tag if present in path, and extract filename
+        clean_path = re.sub(r'\[.*?\]', '', path).strip()
+        filename = _extract_filename(path)
+        return prefix, clean_path, filename
     
+    # Handle general URLs without a specific prefix
+    # Assume the URL is the first part, and try to find a destination directory and filename
+    parts = link.split()
+    url = parts[0]
+    
+    # Default download directory if no specific prefix is given
+    # This assumes 'downloads_dir' is defined somewhere or defaults to a general location.
+    # For now, let's assume a 'downloads' directory within SCR_PATH for general files.
+    general_download_dir = SCR_PATH / 'downloads' 
+    os.makedirs(general_download_dir, exist_ok=True) # Ensure this directory exists
+    
+    dst_dir = str(general_download_dir) # Default to general downloads directory
+    filename = _extract_filename(url) # Extract filename from the URL itself
+
+    # If there are more than 1 parts, attempt to interpret the second part as a destination directory
+    # or a filename if it's not a recognizable directory.
+    if len(parts) > 1:
+        potential_dst_or_file = parts[1]
+        # Check if it looks like a path or a directory name
+        if '/' in potential_dst_or_file or '\\' in potential_dst_or_file or os.path.isdir(potential_dst_or_file):
+            dst_dir = potential_dst_or_file
+            if len(parts) > 2: # If a directory was specified, the third part might be the filename
+                filename = parts[2]
+        else: # Otherwise, assume the second part is the filename
+            filename = potential_dst_or_file
+    
+    # If a filename is provided, ensure it's not just part of the URL being misinterpreted as a filename.
+    # The _extract_filename function is already designed to handle this, but an explicit check can be added.
+    if filename == url: # If the extracted filename is the entire URL, it's probably wrong.
+        filename = None # Let m_download decide or set a default.
+
+    return 'general', url, filename # Use a 'general' prefix to handle these explicitly
+
+
 def download(line):
-    """
-    Downloads files from comma-separated links, processes prefixes,
-    and unpacks zips post-download. Now handles any URL.
-    """
-    download_items = []
-    # Parse the input line for multiple URLs
-    for item in filter(None, map(str.strip, line.split(','))):
-        # Try to parse prefix:url[filename] format
-        prefix_match = re.match(r'^(.*?):(.*?)\[(.*?)\]$', item)
-        if prefix_match:
-            prefix, url_part, filename_part = prefix_match.groups()
-            download_items.append((url_part, filename_part, prefix))
+    """Downloads files from comma-separated links, processes prefixes, and unpacks zips post-download."""
+    for link in filter(None, map(str.strip, line.split(','))):
+        prefix, url, filename = _process_download_link(link)
+
+        if prefix:
+            if prefix == 'extension':
+                extension_repo.append((url, filename))
+                continue
+            
+            # For prefixed downloads (model:, vae:, etc.)
+            if prefix in PREFIX_MAP:
+                dir_path, _ = PREFIX_MAP[prefix]
+                try:
+                    manual_download(url, dir_path, filename, prefix)
+                except Exception as e:
+                    print(f"\n> Download error for {url}: {e}")
+            elif prefix == 'general':
+                # Handle general downloads, using the determined dst_dir and filename
+                # If dst_dir was not explicitly provided in the input, _process_download_link would set a default.
+                # Here, we use the dst_dir passed from _process_download_link.
+                # Assuming `_process_download_link` already determined a suitable `dst_dir` for 'general' downloads.
+                # If the user provides a custom path for a general download, it will be in the `filename` or `url`
+                # so we need to ensure the `dst_dir` is correctly set.
+                parts = link.split()
+                if len(parts) > 1 and (os.path.isdir(parts[1]) or '/' in parts[1] or '\\' in parts[1]):
+                    # If the second part looks like a directory
+                    general_dst_dir = parts[1]
+                    general_filename = parts[2] if len(parts) > 2 else _extract_filename(url)
+                else:
+                    # If no specific directory is given for a general download, use the default general download directory
+                    general_dst_dir = str(SCR_PATH / 'downloads')
+                    general_filename = filename # Use the filename already extracted
+
+                try:
+                    manual_download(url, general_dst_dir, general_filename)
+                except Exception as e:
+                    print(f"\n> Download error for {url}: {e}")
         else:
-            # Handle plain URL or URL with implicit filename/no prefix
-            filename_match = re.search(r'\[(.*?)\]', item)
-            if filename_match:
-                filename_part = filename_match.group(1)
-                url_part = re.sub(r'\[.*?\]', '', item).strip() # .strip() added for safety
-            else:
-                url_part = item.strip() # .strip() added for safety
-                filename_part = None
-
-            prefix_from_map = None
-            # Check if any known short tag is present in the URL for inference
-            for p, (_, short_tag) in PREFIX_MAP.items():
-                if short_tag and short_tag.lower() in url_part.lower():
-                    prefix_from_map = p
-                    break
-            download_items.append((url_part, filename_part, prefix_from_map))
-
-
-    for original_url, desired_filename, suggested_prefix in download_items:
-        try:
-            (download_url, target_dir, final_filename,
-             image_url, image_name, is_extension) = _get_download_info(
-                original_url, desired_filename, suggested_prefix
-            )
-
-            if is_extension:
-                # Assuming extension URLs are git repositories
-                extension_repo.append((download_url, final_filename))
-                print(f"📝 Added extension: {final_filename or download_url} to be cloned later.")
-                continue
-
-            if not download_url:
-                print(f"{COL.R}Skipping download for: {original_url} (No valid download URL found).{COL.X}")
-                continue
-
-            # Download preview images for Civitai
-            if image_url and image_name:
-                print(f"🖼️ Downloading preview image: {image_name}...")
-                m_download(f"{image_url} {target_dir} {image_name}", log=False) # No need for detailed log for images
-
-            # This is the correct way to call manual_download now
-            manual_download(download_url, target_dir, final_filename, image_url, image_name)
-
-        except Exception as e:
-            print(f"\n{COL.R}> Failed to process download for {original_url}: {e}{COL.X}")
+            # Fallback for old style "url dst_dir file_name" format, though _process_download_link should now handle this.
+            # This part might become redundant with the improved _process_download_link.
+            try:
+                # Attempt to parse as "url dst_dir file_name"
+                parts = link.split()
+                if len(parts) >= 2:
+                    manual_download(parts[0], parts[1], parts[2] if len(parts) > 2 else None)
+                else:
+                    print(f"\n> Invalid download format for link: {link}. Expected 'url [destination_directory] [filename]'.")
+            except Exception as e:
+                print(f"\n> Download error: {e}")
 
     _unpack_zips()
 
+def manual_download(url, dst_dir, file_name=None, prefix=None):
+    clean_url = url
+    image_url, image_name = None, None
+
+    # Ensure dst_dir exists
+    os.makedirs(dst_dir, exist_ok=True)
+
+    if 'civitai' in url:
+        api = CivitAiAPI(civitai_token)
+        if not (data := api.validate_download(url, file_name)):
+            return
+
+        model_type, file_name = data.model_type, data.model_name    # Type, name
+        clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL
+        image_url, image_name = data.image_url, data.image_name    # Img_URL, Img_Name
+
+        # Download preview images
+        if image_url and image_name:
+            m_download(f"{image_url} {dst_dir} {image_name}")
+
+    elif any(s in url for s in ('github', 'huggingface.co')):
+        if file_name and '.' not in file_name:
+            # This logic needs care: if filename is specified, don't just append extension based on URL if it's already a full filename.
+            # A more robust check for whether file_name already has an extension.
+            if not Path(file_name).suffix and '.' in Path(urlparse(clean_url).path).name: # Check if original URL had an extension
+                file_name += f".{clean_url.split('.')[-1]}"
+
+    # Formatted info output
+    format_output(clean_url, dst_dir, file_name, image_url, image_name)
+
+    # Downloading
+    # m_download expects "URL destination_directory filename"
+    m_download(f"{url} {dst_dir} {file_name or ''}", log=True)
 
 ''' SubModels - Added URLs '''
 
@@ -676,25 +672,10 @@ def handle_submodels(selection, num_selection, model_dict, dst_dir, base_url, in
             'name': name
         }
 
-    # Format the output to be compatible with the new 'download' function
-    # Each entry can be 'url' or 'prefix:url[filename]'
-    formatted_downloads = []
-    for m in unique_models.values():
-        # Infer prefix from dst_dir or use a general if not found
-        inferred_prefix = None
-        for p, (d_path, _) in PREFIX_MAP.items():
-            if Path(m['dst_dir']) == Path(d_path):
-                inferred_prefix = p
-                break
-        
-        if inferred_prefix:
-            formatted_downloads.append(f"{inferred_prefix}:{m['url']}[{m['name']}]")
-        else:
-            # Fallback for directly providing URL and destination
-            formatted_downloads.append(f"{m['url']}[{m['name']}]")
-
-    return base_url + ', '.join(formatted_downloads)
-
+    return base_url + ', '.join(
+        f"{m['url']} {m['dst_dir']} {m['name']}"
+        for m in unique_models.values()
+    )
 
 line = ""
 line = handle_submodels(model, model_num, model_list, model_dir, line)
@@ -705,63 +686,57 @@ line = handle_submodels(controlnet, controlnet_num, controlnet_list, control_dir
 
 def _process_lines(lines):
     """Processes text lines, extracts valid URLs with tags/filenames, and ensures uniqueness."""
+    current_tag = None
     processed_entries = set()  # Store (tag, clean_url) to check uniqueness
     result_urls = []
 
     for line in lines:
-        clean_line = line.strip() # Don't lower-case the whole line yet
+        clean_line = line.strip().lower()
 
-        # Check for tags/prefixes at the start of the line or implicitly
-        current_tag = None
+        # Update the current tag when detected
+        found_tag = False
         for prefix, (_, short_tag) in PREFIX_MAP.items():
-            if clean_line.lower().startswith(f"# {prefix}".lower()) or (short_tag and clean_line.lower().startswith(short_tag.lower())):
+            if (f"# {prefix}".lower() in clean_line) or (short_tag and short_tag.lower() in clean_line):
                 current_tag = prefix
-                # Remove the tag from the line to parse the URL part
-                clean_line = clean_line[len(f"# {prefix}"):].strip() if clean_line.lower().startswith(f"# {prefix}".lower()) else clean_line[len(short_tag):].strip()
+                found_tag = True
                 break
         
-        # If a line starts with a URL, treat it as a generic URL unless a prefix was already identified
-        if not current_tag and (clean_line.startswith('http://') or clean_line.startswith('https://')):
-            # Assume it's a generic download without a specific prefix mapping initially
-            pass # current_tag remains None for generic URLs
+        # If no specific tag is found, and the line contains 'http', assume general download
+        if not found_tag and 'http' in clean_line:
+            current_tag = 'general' # Use 'general' tag for untagged URLs
+
+        if not current_tag:
+            continue
 
         # Normalise the delimiters and process each URL
-        normalized_line = re.sub(r'[\s,]+', ',', clean_line)
+        normalized_line = re.sub(r'[\s,]+', ',', line.strip())
         for url_entry in normalized_line.split(','):
-            url_part_and_filename = url_entry.split('#')[0].strip() # Remove comments
-
-            # Extract explicit filename in [] if present
-            explicit_filename = None
-            filename_match = re.search(r'\[(.*?)\]', url_part_and_filename)
-            if filename_match:
-                explicit_filename = filename_match.group(1)
-                url = re.sub(r'\[.*?\]', '', url_part_and_filename).strip()
-            else:
-                url = url_part_and_filename
-
-            if not url.startswith('http'):
+            url_part = url_entry.split('#')[0].strip()
+            if not url_part.startswith('http'):
                 continue
 
-            # Clean the URL for uniqueness check
-            clean_url_for_check = _clean_url(url)
-            entry_key = (current_tag, clean_url_for_check)    # Uniqueness is determined by a pair (tag, URL)
+            clean_url_part = re.sub(r'\[.*?\]', '', url_part)
+            entry_key = (current_tag, clean_url_part)  # Uniqueness is determined by a pair (tag, URL)
 
             if entry_key not in processed_entries:
-                formatted_url = url # Start with the original URL
-
-                # If a prefix was identified, add it back to the formatted URL
-                if current_tag:
-                    formatted_url = f"{current_tag}:{formatted_url}"
+                filename = _extract_filename(url_entry)
                 
-                # Add explicit filename if it was found
-                if explicit_filename:
-                    formatted_url += f"[{explicit_filename}]"
+                if current_tag in PREFIX_MAP: # If it's a known prefixed download
+                    formatted_url = f"{current_tag}:{clean_url_part}"
+                    if filename:
+                        formatted_url += f"[{filename}]"
+                else: # For 'general' downloads
+                    # For general downloads, the format is "URL [destination_directory] [filename]"
+                    # We need to determine the destination directory.
+                    general_download_dir = SCR_PATH / 'downloads'
+                    # If filename was extracted from [filename] tag, we use that.
+                    # Otherwise, rely on m_download to figure out filename from URL.
+                    formatted_url = f"{clean_url_part} {general_download_dir} {filename or ''}"
 
                 result_urls.append(formatted_url)
                 processed_entries.add(entry_key)
 
     return ', '.join(result_urls) if result_urls else ''
-
 
 def process_file_downloads(file_urls, additional_lines=None):
     """Reads URLs from files/HTTP sources."""
@@ -773,57 +748,85 @@ def process_file_downloads(file_urls, additional_lines=None):
     for source in file_urls:
         if source.startswith('http'):
             try:
-                print(f"📡 Fetching URLs from remote file: {source}")
                 response = requests.get(_clean_url(source))
                 response.raise_for_status()
                 lines.extend(response.text.splitlines())
-            except requests.RequestException as e:
-                print(f"{COL.R}Error fetching remote file {source}: {e}{COL.X}")
+            except requests.RequestException:
                 continue
         else:
             try:
-                print(f"📁 Reading URLs from local file: {source}")
                 with open(source, 'r', encoding='utf-8') as f:
                     lines.extend(f.readlines())
             except FileNotFoundError:
-                print(f"{COL.R}Local file not found: {source}{COL.X}")
-                continue
-            except Exception as e:
-                print(f"{COL.R}Error reading local file {source}: {e}{COL.X}")
                 continue
 
     return _process_lines(lines)
 
 # File URLs processing
 urls_sources = (Model_url, Vae_url, LoRA_url, Embedding_url, Extensions_url, ADetailer_url)
-# Combine urls_sources and custom_file_urls, filtering out empty ones
-all_file_sources = []
-for src_list in urls_sources:
-    if src_list:
-        all_file_sources.extend([s.strip() for s in src_list.replace(',', ' ').split()])
-if custom_file_urls:
-    all_file_sources.extend([f.strip() for f in custom_file_urls.replace(',', ' ').split()])
-file_urls_to_process = [f"{f}.txt" if not f.endswith('.txt') else f for f in all_file_sources]
+file_urls = [f"{f}.txt" if not f.endswith('.txt') else f for f in custom_file_urls.replace(',', '').split()] if custom_file_urls else []
 
-# Initialize line with submodel downloads if any
-final_download_line = line # This 'line' already contains submodel downloads
+# p -> prefix ; u -> url | Remember: don't touch the prefix!
+prefixed_urls = [f"{p}:{u}" for p, u in zip(PREFIX_MAP, urls_sources) if u for u in u.replace(',', '').split()]
 
-# Process URLs from files and additional empowerment_output
-processed_file_urls = process_file_downloads(file_urls_to_process, empowerment_output)
-if processed_file_urls:
-    if final_download_line:
-        final_download_line += ', ' + processed_file_urls
-    else:
-        final_download_line = processed_file_urls
+# Modify how the 'line' is constructed to also allow raw URLs
+# We need to process custom_urls input for general downloads.
+# Let's assume a new input variable `custom_general_urls` for un-prefixed URLs.
+# If you don't have such a variable, you'd need to decide how to feed these.
+# For demonstration, let's assume `custom_general_urls` can be a string of comma-separated raw URLs.
+# If `custom_general_urls` is not available, you could modify `custom_file_urls` to include them,
+# or add a new input field to your UI/notebook for general URLs.
 
-# This is the actual download call now
+# For now, let's add a placeholder for custom_general_urls if it's not defined in your `settings.json`
+# or passed as an argument.
+if 'custom_general_urls' not in locals():
+    custom_general_urls = "" # Or fetch from settings.json if you add it there.
+
+# Process the general URLs
+general_downloads_line = ""
+if custom_general_urls:
+    # Split by comma and strip whitespace for each URL
+    general_urls_list = [url.strip() for url in custom_general_urls.split(',') if url.strip()]
+    # For each general URL, we might want to specify a default download directory if not provided.
+    # The _process_download_link function for 'general' will handle this.
+    # The format expected by download() for general URLs is "URL [destination_directory] [filename]"
+    # so we construct it here.
+    processed_general_urls = []
+    for url_entry in general_urls_list:
+        # _process_download_link will return 'general', the cleaned URL, and filename.
+        # We need to format it for m_download which takes "url dst_dir filename".
+        # The dst_dir for general files will be SCR_PATH / 'downloads' by default.
+        _, clean_url_for_general, filename_for_general = _process_download_link(url_entry)
+        
+        # Construct the string for m_download: "URL DEST_DIR FILENAME"
+        # We'll use the default general_download_dir for now.
+        general_download_dir = SCR_PATH / 'downloads'
+        formatted_general_url = f"{clean_url_for_general} {general_download_dir} {filename_for_general or ''}"
+        processed_general_urls.append(formatted_general_url)
+    
+    general_downloads_line = ', '.join(processed_general_urls)
+
+
+# Combine all lines
+all_download_lines = []
+if line:
+    all_download_lines.append(line)
+if general_downloads_line:
+    all_download_lines.append(general_downloads_line)
+
+file_processed_urls = process_file_downloads(file_urls, empowerment_output)
+if file_processed_urls:
+    all_download_lines.append(file_processed_urls)
+
+line = ', '.join(all_download_lines)
+
 if detailed_download == 'on':
     print(f"\n\n{COL.Y}# ====== Detailed Download ====== #\n{COL.X}")
-    download(final_download_line)
+    download(line)
     print(f"\n{COL.Y}# =============================== #\n{COL.X}")
 else:
     with capture.capture_output():
-        download(final_download_line)
+        download(line)
 
 print('\r🏁 Download Complete!' + ' '*15)
 
@@ -832,24 +835,8 @@ print('\r🏁 Download Complete!' + ' '*15)
 def _clone_repository(repo, repo_name, extension_dir):
     """Clones the repository to the specified directory."""
     repo_name = repo_name or repo.split('/')[-1]
-    # Ensure the target directory exists before cloning
-    os.makedirs(extension_dir, exist_ok=True)
-    target_path = Path(extension_dir) / repo_name
-    if target_path.exists():
-        print(f"Skipping cloning '{repo_name}': directory already exists at {target_path}")
-        return
-
-    # Use check_call for better error handling and direct output for clarity
-    try:
-        print(f"Cloning {repo} into {target_path}...")
-        subprocess.check_call(shlex.split(f"git clone --depth 1 --recursive {repo} {target_path}"))
-        print(f"Successfully cloned {repo_name}.")
-        # No need for cd and git fetch in separate commands after recursive clone to depth 1
-    except subprocess.CalledProcessError as e:
-        print(f"{COL.R}Error cloning {repo}: {e}{COL.X}")
-    except Exception as e:
-        print(f"{COL.R}An unexpected error occurred while cloning {repo}: {e}{COL.X}")
-
+    command = f"cd {extension_dir} && git clone --depth 1 --recursive {repo} {repo_name} && cd {repo_name} && git fetch"
+    ipySys(command)
 
 extension_type = 'nodes' if UI == 'ComfyUI' else 'extensions'
 
