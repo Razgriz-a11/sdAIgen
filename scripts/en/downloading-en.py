@@ -38,6 +38,8 @@ LANG = js.read(SETTINGS_PATH, 'ENVIRONMENT.lang')
 ENV_NAME = js.read(SETTINGS_PATH, 'ENVIRONMENT.env_name')
 UI = js.read(SETTINGS_PATH, 'WEBUI.current')
 WEBUI = js.read(SETTINGS_PATH, 'WEBUI.webui_path')
+civitai_token = js.read(SETTINGS_PATH, 'ENVIRONMENT.civitai_token', '') # Assume this is in settings.json
+huggingface_token = js.read(SETTINGS_PATH, 'ENVIRONMENT.huggingface_token', '') # Assume this is in settings.json
 
 
 # Text Colors (\033)
@@ -47,7 +49,7 @@ class COLORS:
     Y  =  "\033[33m"      # Yellow
     B  =  "\033[34m"      # Blue
     lB =  "\033[36;1m"    # lightBlue
-    X  =  "\033[0m"      # Reset
+    X  =  "\033[0m"       # Reset
 
 COL = COLORS
 
@@ -65,10 +67,10 @@ def install_dependencies(commands):
 def setup_venv(url):
     """Customize the virtual environment using the specified URL."""
     CD(HOME)
-    # url = "https://huggingface.co/NagisaNao/ANXETY/resolve/main/python31017-venv-torch251-cu121-C-fca.tar.lz4"
     fn = Path(url).name
 
-    m_download(f"{url} {HOME} {fn}")
+    # Use the new download fallback mechanism
+    download_from_url_with_fallbacks(url, HOME, fn, log=True)
 
     # Install dependencies based on environment
     install_commands = []
@@ -156,11 +158,6 @@ if venv_needs_reinstall:
     # Update latest UI version...
     js.update(SETTINGS_PATH, 'WEBUI.latest', current_ui)
 
-# if not os.path.exists(VENV):
-#     print('♻️ Installing VENV, this will take some time...')
-#     setup_venv()
-#     clear_output()
-
 ## ================ loading settings V5 ==================
 
 def load_settings(path):
@@ -188,7 +185,7 @@ if UI in ['A1111', 'SD-UX'] and not os.path.exists('/root/.cache/huggingface/hub
     chache_url = 'https://huggingface.co/NagisaNao/ANXETY/resolve/main/hf_chache_adetailer.zip'
 
     zip_path = f"{HOME}/{name_zip}.zip"
-    m_download(f"{chache_url} {HOME} {name_zip}")
+    download_from_url_with_fallbacks(chache_url, HOME, name_zip + ".zip", log=True) # Use new download method
     ipySys(f"unzip -q -o {zip_path} -d /")
     ipySys(f"rm -rf {zip_path}")
 
@@ -227,16 +224,12 @@ if latest_webui or latest_extensions:
         ## Update Webui
         if latest_webui:
             CD(WEBUI)
-            # ipySys('git restore .')
-            # ipySys('git pull -X theirs --rebase --autostash')
-
             ipySys('git stash push --include-untracked')
             ipySys('git pull --rebase')
             ipySys('git stash pop')
 
         ## Update extensions
         if latest_extensions:
-            # ipySys('{\'for dir in \' + WEBUI + \'/extensions/*/; do cd \\'$dir\\' && git reset --hard && git pull; done\'}')
             for entry in os.listdir(f"{WEBUI}/extensions"):
                 dir_path = f"{WEBUI}/extensions/{entry}"
                 if os.path.isdir(dir_path):
@@ -249,7 +242,7 @@ if latest_webui or latest_extensions:
 # === FIXING EXTENSIONS ===
 with capture.capture_output():
     # --- Umi-Wildcard ---
-    ipySys("sed -i '521s/open=\\(False\\|True\\)/open=False/' {WEBUI}/extensions/Umi-AI-Wildcards/scripts/wildcard_recursive.py")    # Closed accordion by default
+    ipySys(f"sed -i '521s/open=\\(False\\|True\\)/open=False/' {WEBUI}/extensions/Umi-AI-Wildcards/scripts/wildcard_recursive.py")    # Closed accordion by default
 
 
 ## Version switching
@@ -259,8 +252,8 @@ if commit_hash:
         CD(WEBUI)
         ipySys('git config --global user.email "you@example.com"')
         ipySys('git config --global user.name "Your Name"')
-        ipySys('git reset --hard {commit_hash}')
-        ipySys('git pull origin {commit_hash}')    # Get last changes in branch
+        ipySys(f'git reset --hard {commit_hash}')
+        ipySys(f'git pull origin {commit_hash}')    # Get last changes in branch
     print(f"\r🔄 Switch complete! Current commit: {COL.B}{commit_hash}{COL.X}")
 
 
@@ -426,7 +419,7 @@ def format_output(url, dst_dir, file_name, image_url=None, image_name=None):
     if file_name:
         info = _center_text(f"[{file_name.rsplit('.', 1)[0]}]")
     if not file_name and 'drive.google.com' in url:
-      info = _center_text('[GDrive]')
+        info = _center_text('[GDrive]')
 
     sep_line = '───' * 20
 
@@ -470,7 +463,108 @@ def _unpack_zips():
                 zf.extractall(zip_file.with_suffix(''))
             zip_file.unlink()
 
-# Download Core
+# --- New: HuggingFace API Wrapper ---
+class HuggingFaceAPI:
+    def __init__(self, token=None):
+        self.headers = {}
+        if token:
+            self.headers['Authorization'] = f'Bearer {token}'
+
+    def download_file(self, repo_id, file_path, local_dir, local_filename=None):
+        base_url = "https://huggingface.co"
+        url = f"{base_url}/{repo_id}/resolve/main/{file_path}"
+        if not local_filename:
+            local_filename = Path(file_path).name
+
+        os.makedirs(local_dir, exist_ok=True)
+        local_filepath = Path(local_dir) / local_filename
+
+        print(f"Attempting Hugging Face API download for {local_filename} from {url}")
+        try:
+            with requests.get(url, headers=self.headers, stream=True) as r:
+                r.raise_for_status()
+                with open(local_filepath, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            print(f"Hugging Face API download successful: {local_filepath}")
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Hugging Face API download failed: {e}")
+            return False
+
+# --- New: Download Fallback Mechanism ---
+def download_from_url_with_fallbacks(url, dst_dir, file_name=None, log=False):
+    """
+    Attempts to download a file using m_download, then falls back to Hugging Face API,
+    then Civitai API if applicable.
+    """
+    if not file_name:
+        file_name = _extract_filename(url)
+    if not file_name:
+        print(f"{COL.R}Error: Could not determine filename for URL: {url}{COL.X}")
+        return False
+
+    os.makedirs(dst_dir, exist_ok=True)
+    target_path = Path(dst_dir) / file_name
+
+    # Attempt 1: Normal m_download
+    print(f"\nAttempting normal download for {file_name} to {dst_dir}...")
+    try:
+        # m_download typically takes arguments like: "url dst_dir filename"
+        # It's assumed m_download handles the actual file saving and progress.
+        success = m_download(f"{url} {dst_dir} {file_name}", log=log)
+        if success and target_path.exists() and target_path.stat().st_size > 0:
+            print(f"{COL.G}Normal download successful: {file_name}{COL.X}")
+            return True
+        else:
+            print(f"{COL.Y}Normal download did not complete successfully or file is empty. Trying fallbacks...{COL.X}")
+    except Exception as e:
+        print(f"{COL.Y}Normal download failed with error: {e}. Trying fallbacks...{COL.X}")
+
+    # Attempt 2: Hugging Face API
+    if "huggingface.co" in url:
+        print(f"Attempting Hugging Face API download for {file_name}...")
+        try:
+            hf_api = HuggingFaceAPI(huggingface_token)
+            # Heuristic to extract repo_id and file_path from Hugging Face URL
+            match = re.match(r"https://huggingface.co/([^/]+/[^/]+)/resolve/main/(.*)", url)
+            if match:
+                repo_id = match.group(1)
+                hf_file_path = match.group(2)
+                if hf_api.download_file(repo_id, hf_file_path, dst_dir, file_name):
+                    print(f"{COL.G}Hugging Face API download successful: {file_name}{COL.X}")
+                    return True
+            else:
+                print(f"{COL.Y}Could not parse Hugging Face URL for API download: {url}{COL.X}")
+        except Exception as e:
+            print(f"{COL.R}Hugging Face API download failed: {e}{COL.X}")
+
+    # Attempt 3: Civitai API
+    if "civitai.com" in url:
+        print(f"Attempting Civitai API download for {file_name}...")
+        try:
+            api = CivitAiAPI(civitai_token)
+            data = api.validate_download(url, file_name)
+            if data and data.download_url:
+                civitai_download_url = data.download_url
+                # Use m_download again, but with the specific Civitai direct download URL
+                success = m_download(f"{civitai_download_url} {dst_dir} {file_name}", log=log)
+                if success and target_path.exists() and target_path.stat().st_size > 0:
+                    print(f"{COL.G}Civitai API download successful: {file_name}{COL.X}")
+                    # Download preview images if available
+                    if data.image_url and data.image_name:
+                        download_from_url_with_fallbacks(data.image_url, dst_dir, data.image_name, log=log)
+                    return True
+                else:
+                    print(f"{COL.R}Civitai API download via m_download failed or file is empty.{COL.X}")
+            else:
+                print(f"{COL.R}Civitai API validation failed or no download URL found for {url}{COL.X}")
+        except Exception as e:
+            print(f"{COL.R}Civitai API download failed: {e}{COL.X}")
+
+    print(f"{COL.R}Failed to download {file_name} from any method.{COL.X}")
+    return False
+
 
 def _process_download_link(link):
     """Processes a download link, splitting prefix, URL, and filename."""
@@ -524,6 +618,7 @@ def download(line):
                 extension_repo.append((url, filename))
                 continue
             try:
+                # For prefixed downloads, still try fallbacks if manual_download uses it
                 manual_download(url, dir_path, filename, prefix)
             except Exception as e:
                 print(f"\n> Download error: {e}")
@@ -539,7 +634,8 @@ def manual_download(url, dst_dir, file_name=None, prefix=None):
     clean_url = url
     image_url, image_name = None, None
 
-    # Handle Civitai URLs ONLY if they are part of the prefixed system or specifically identified as Civitai API URLs
+    # Note: Civitai API handling is now primarily within download_from_url_with_fallbacks,
+    # but we keep this initial validation for consistency if needed for specific logic outside the fallback.
     if 'civitai.com' in url and prefix is not None and prefix in PREFIX_MAP and prefix != 'extension':
         api = CivitAiAPI(civitai_token)
         data = api.validate_download(url, file_name)
@@ -547,13 +643,14 @@ def manual_download(url, dst_dir, file_name=None, prefix=None):
             print(f"\n{COL.R}[API Error]: Invalid Civitai model URL or API validation failed: {url}{COL.X}")
             return # Exit if API validation fails
 
+        # These are used for formatting output and potentially for the Civitai API specific download within fallbacks
         model_type, file_name = data.model_type, data.model_name    # Type, name
-        clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL
+        clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL (this is the direct download URL)
         image_url, image_name = data.image_url, data.image_name    # Img_URL, Img_Name
 
-        # Download preview images
+        # Download preview images using the fallback mechanism
         if image_url and image_name:
-            m_download(f"{image_url} {dst_dir} {image_name}")
+            download_from_url_with_fallbacks(image_url, dst_dir, image_name, log=True)
 
     elif any(s in url for s in ('github', 'huggingface.co')) and prefix is not None and prefix in PREFIX_MAP:
         if file_name and '.' not in file_name:
@@ -570,8 +667,8 @@ def manual_download(url, dst_dir, file_name=None, prefix=None):
     # Formatted info output
     format_output(clean_url, dst_dir, file_name, image_url, image_name)
 
-    # Downloading
-    m_download(f"{url} {dst_dir} {file_name or ''}", log=True)
+    # Use the new download fallback mechanism for the actual download
+    download_from_url_with_fallbacks(url, dst_dir, file_name, log=True)
 
 
 ''' SubModels - Added URLs '''
