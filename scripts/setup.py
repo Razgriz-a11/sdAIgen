@@ -173,7 +173,7 @@ async def download_files_async(scr_path, lang, fork_user, fork_repo, branch, log
         }
     }
 
-    base_url = f"https://raw.githubusercontent.com/{fork_user}/{fork_repo}/{branch}"
+    base_url = f"https://raw.githubusercontent.com/Razgriz-a11/sdAIgen/{branch}"
     file_list = generate_file_list(files_structure, base_url, scr_path)
 
     async with aiohttp.ClientSession() as session:
