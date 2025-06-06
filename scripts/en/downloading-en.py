@@ -1,9 +1,9 @@
-# ~ download.py | by ANXETY (Modified by Gemini) ~
+# ~ download.py | by ANXETY ~
 
-from webui_utils import handle_setup_timer      # WEBUI
-from CivitaiAPI import CivitAiAPI              # CivitAI API
-from Manager import m_download                 # Every Download
-import json_utils as js                        # JSON
+from webui_utils import handle_setup_timer    # WEBUI
+from CivitaiAPI import CivitAiAPI             # CivitAI API
+from Manager import m_download                # Every Download
+import json_utils as js                       # JSON
 
 from IPython.display import clear_output
 from IPython.utils import capture
@@ -42,12 +42,12 @@ WEBUI = js.read(SETTINGS_PATH, 'WEBUI.webui_path')
 
 # Text Colors (\033)
 class COLORS:
-    R  =  "\033[31m"      # Red
-    G  =  "\033[32m"      # Green
-    Y  =  "\033[33m"      # Yellow
-    B  =  "\033[34m"      # Blue
-    lB =  "\033[36;1m"    # lightBlue
-    X  =  "\033[0m"       # Reset
+    R  =  "\033[31m"     # Red
+    G  =  "\033[32m"     # Green
+    Y  =  "\033[33m"     # Yellow
+    B  =  "\033[34m"     # Blue
+    lB =  "\033[36;1m"   # lightBlue
+    X  =  "\033[0m"      # Reset
 
 COL = COLORS
 
@@ -65,6 +65,7 @@ def install_dependencies(commands):
 def setup_venv(url):
     """Customize the virtual environment using the specified URL."""
     CD(HOME)
+    # url = "https://huggingface.co/NagisaNao/ANXETY/resolve/main/python31017-venv-torch251-cu121-C-fca.tar.lz4"
     fn = Path(url).name
 
     m_download(f"{url} {HOME} {fn}")
@@ -155,6 +156,11 @@ if venv_needs_reinstall:
     # Update latest UI version...
     js.update(SETTINGS_PATH, 'WEBUI.latest', current_ui)
 
+# if not os.path.exists(VENV):
+#     print('♻️ Installing VENV, this will take some time...')
+#     setup_venv()
+#     clear_output()
+
 ## ================ loading settings V5 ==================
 
 def load_settings(path):
@@ -195,7 +201,7 @@ if not os.path.exists(WEBUI):
     print(f"⌚ Unpacking Stable Diffusion... | WEBUI: {COL.B}{UI}{COL.X}", end='')
 
     ipyRun('run', f"{SCRIPTS}/UIs/{UI}.py")
-    handle_setup_timer(WEBUI, start_timer)      # Setup timer (for timer-extensions)
+    handle_setup_timer(WEBUI, start_timer)		# Setup timer (for timer-extensions)
 
     install_time = time.time() - start_install
     minutes, seconds = divmod(int(install_time), 60)
@@ -221,12 +227,16 @@ if latest_webui or latest_extensions:
         ## Update Webui
         if latest_webui:
             CD(WEBUI)
+            # ipySys('git restore .')
+            # ipySys('git pull -X theirs --rebase --autostash')
+
             ipySys('git stash push --include-untracked')
             ipySys('git pull --rebase')
             ipySys('git stash pop')
 
         ## Update extensions
         if latest_extensions:
+            # ipySys('{\'for dir in \' + WEBUI + \'/extensions/*/; do cd \\'$dir\\' && git reset --hard && git pull; done\'}')
             for entry in os.listdir(f"{WEBUI}/extensions"):
                 dir_path = f"{WEBUI}/extensions/{entry}"
                 if os.path.isdir(dir_path):
@@ -261,15 +271,15 @@ mountGDrive = js.read(SETTINGS_PATH, 'mountGDrive')  # Mount/unmount flag
 # Configuration
 GD_BASE = "/content/drive/MyDrive/sdAIgen"
 SYMLINK_CONFIG = [
-    {    # model
+    {   # model
         'local_dir': model_dir,
         'gdrive_subpath': 'Checkpoints',
     },
-    {    # vae
+    {   # vae
         'local_dir': vae_dir,
         'gdrive_subpath': 'VAE',
     },
-    {    # lora
+    {   # lora
         'local_dir': lora_dir,
         'gdrive_subpath': 'Lora',
     }
@@ -379,7 +389,7 @@ model_files = '_xl-models-data.py' if XL_models else '_models-data.py'
 with open(f"{SCRIPTS}/{model_files}") as f:
     exec(f.read())
 
-## Downloading model and stuff
+## Downloading model and stuff | oh~ Hey! If you're freaked out by that code too, don't worry, me too!
 print('📦 Downloading models and stuff...', end='')
 
 extension_repo = []
@@ -414,18 +424,17 @@ def format_output(url, dst_dir, file_name, image_url=None, image_name=None):
     """Formats and prints download details with colored text."""
     info = '[NONE]'
     if file_name:
-        info = _center_text(f"[{Path(file_name).stem}]")
+        info = _center_text(f"[{file_name.rsplit('.', 1)[0]}]")
     if not file_name and 'drive.google.com' in url:
-        info = _center_text('[GDrive]')
+      info = _center_text('[GDrive]')
 
     sep_line = '───' * 20
 
     print()
     print(f"{COL.G}{sep_line}{COL.lB}{info}{COL.G}{sep_line}{COL.X}")
     print(f"{COL.Y}{'URL:':<12}{COL.X}{url}")
-    print(f"{COL.Y}{'SAVE DIR:':<12}{COL.B}{dst_dir}{COL.X}")
-    if file_name:
-        print(f"{COL.Y}{'FILE NAME:':<12}{COL.B}{file_name}{COL.X}")
+    print(f"{COL.Y}{'SAVE DIR:':<12}{COL.B}{dst_dir}")
+    print(f"{COL.Y}{'FILE NAME:':<12}{COL.B}{file_name}{COL.X}")
     if 'civitai' in url and image_url:
         print(f"{COL.G}{'[Preview]:':<12}{COL.X}{image_name} → {image_url}")
     print()
@@ -433,7 +442,6 @@ def format_output(url, dst_dir, file_name, image_url=None, image_name=None):
 ''' Main Download Code '''
 
 def _clean_url(url):
-    """Cleans up URLs from common sources like Hugging Face and GitHub."""
     url_cleaners = {
         'huggingface.co': lambda u: u.replace('/blob/', '/resolve/').split('?')[0],
         'github.com': lambda u: u.replace('/blob/', '/raw/')
@@ -444,29 +452,19 @@ def _clean_url(url):
     return url
 
 def _extract_filename(url):
-    """Extracts a filename from a URL, prioritizing manually specified names."""
-    # 1. Check for manually specified filename in brackets: [filename.ext]
     if match := re.search(r'\[(.*?)\]', url):
         return match.group(1)
-
-    # 2. For Civitai and Google Drive, the filename is handled elsewhere or by the downloader.
     if any(d in urlparse(url).netloc for d in ["civitai.com", "drive.google.com"]):
         return None
-
-    # 3. For other URLs, return the last part of the path.
-    return Path(urlparse(url).path).name or None
-
+    return Path(urlparse(url).path).name
 
 def _unpack_zips():
     """Recursively extract and delete all .zip files in PREFIX_MAP directories."""
     for dir_path, _ in PREFIX_MAP.values():
         for zip_file in Path(dir_path).rglob('*.zip'):
-            try:
-                with zipfile.ZipFile(zip_file, 'r') as zf:
-                    zf.extractall(zip_file.parent)
-                zip_file.unlink()
-            except Exception as e:
-                print(f"Failed to unpack {zip_file}: {e}")
+            with zipfile.ZipFile(zip_file, 'r') as zf:
+                zf.extractall(zip_file.with_suffix(''))
+            zip_file.unlink()
 
 # Download Core
 
@@ -476,7 +474,7 @@ def _process_download_link(link):
     if ':' in link:
         prefix, path = link.split(':', 1)
         if prefix in PREFIX_MAP:
-            return prefix, re.sub(r'\[.*?\]', '', path), _extract_filename(link)
+            return prefix, re.sub(r'\[.*?\]', '', path), _extract_filename(path)
     return None, link, None
 
 def download(line):
@@ -494,58 +492,37 @@ def download(line):
             except Exception as e:
                 print(f"\n> Download error: {e}")
         else:
-            # This handles the format from handle_submodels: "url dst_dir [file_name]"
-            parts = link.split()
-            if len(parts) >= 2 and parts[0].startswith('http'):
-                 d_url, d_dst_dir, *d_file_name = parts
-                 d_file_name = d_file_name[0] if d_file_name else None
-                 manual_download(d_url, d_dst_dir, d_file_name)
-            else:
-                 print(f"\n{COL.R}Error: No valid prefix or format for link:{COL.X} {link}")
-                 print(f"{COL.Y}Please use a prefix (e.g., 'model:{link}') or the format 'url destination_directory [filename]'.{COL.X}")
-
+            url, dst_dir, file_name = url.split()
+            manual_download(url, dst_dir, file_name)
 
     _unpack_zips()
 
-
 def manual_download(url, dst_dir, file_name=None, prefix=None):
-    """Handles the download for a single URL, directing it to the correct destination."""
-    clean_url = _clean_url(url)
+    clean_url = url
     image_url, image_name = None, None
 
-    # Special handling for Civitai URLs to fetch metadata
-    if 'civitai.com' in clean_url:
+    if 'civitai' in url:
         api = CivitAiAPI(civitai_token)
-        if not (data := api.validate_download(clean_url, file_name)):
-            return  # Exit if validation fails
+        if not (data := api.validate_download(url, file_name)):
+            return
 
-        # Update details from API response
-        model_type, file_name = data.model_type, data.model_name
-        clean_url, url = data.clean_url, data.download_url
-        image_url, image_name = data.image_url, data.image_name
+        model_type, file_name = data.model_type, data.model_name    # Type, name
+        clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL
+        image_url, image_name = data.image_url, data.image_name     # Img_URL, Img_Name
 
-        # Download preview image if available
+        # Download preview images
         if image_url and image_name:
-            with capture.capture_output():
-                m_download(f"{image_url} {dst_dir} {image_name}")
+            m_download(f"{image_url} {dst_dir} {image_name}")
 
-    # If file_name is still not determined, extract it from the URL
-    if not file_name:
-        file_name = _extract_filename(url)
-
-    # For Google Drive, gdown handles the filename, so we can proceed.
-    # For others, if filename couldn't be determined, we cannot proceed.
-    if not file_name and 'drive.google.com' not in url:
-        print(f"\n{COL.R}Error: Could not determine filename for URL:{COL.X} {clean_url}")
-        print(f"{COL.Y}Please specify it in the URL, like: {clean_url}[desired_filename.ext]{COL.X}")
-        return
+    elif any(s in url for s in ('github', 'huggingface.co')):
+        if file_name and '.' not in file_name:
+            file_name += f".{clean_url.split('.')[-1]}"
 
     # Formatted info output
     format_output(clean_url, dst_dir, file_name, image_url, image_name)
 
-    # Execute the download
+    # Downloading
     m_download(f"{url} {dst_dir} {file_name or ''}", log=True)
-
 
 ''' SubModels - Added URLs '''
 
@@ -560,15 +537,18 @@ def _parse_selection_numbers(num_str, max_num):
         if not part.isdigit():
             continue
 
+        # Check if the entire part is a valid number
         part_int = int(part)
         if part_int <= max_num:
             unique_numbers.add(part_int)
-            continue
+            continue  # No need to split further
 
+        # Split the part into valid numbers starting from the longest possible
         current_position = 0
         part_len = len(part)
         while current_position < part_len:
             found = False
+            # Try lengths from max_length down to 1
             for length in range(min(max_length, part_len - current_position), 0, -1):
                 substring = part[current_position:current_position + length]
                 if substring.isdigit():
@@ -579,6 +559,7 @@ def _parse_selection_numbers(num_str, max_num):
                         found = True
                         break
             if not found:
+                # Move to the next character if no valid number found
                 current_position += 1
 
     return sorted(unique_numbers)
@@ -592,4 +573,152 @@ def handle_submodels(selection, num_selection, model_dict, dst_dir, base_url, in
 
     if num_selection:
         max_num = len(model_dict)
-        for num in _parse_selection_numbers(num_selection, max_
+        for num in _parse_selection_numbers(num_selection, max_num):
+            if 1 <= num <= max_num:
+                name = list(model_dict.keys())[num - 1]
+                selected.extend(model_dict[name])
+
+    unique_models = {}
+    for model in selected:
+        name = model.get('name') or os.path.basename(model['url'])
+        if not inpainting_model and "inpainting" in name:
+            continue
+        unique_models[name] = {
+            'url': model['url'],
+            'dst_dir': model.get('dst_dir', dst_dir),
+            'name': name
+        }
+
+    return base_url + ', '.join(
+        f"{m['url']} {m['dst_dir']} {m['name']}"
+        for m in unique_models.values()
+    )
+
+line = ""
+line = handle_submodels(model, model_num, model_list, model_dir, line)
+line = handle_submodels(vae, vae_num, vae_list, vae_dir, line)
+line = handle_submodels(controlnet, controlnet_num, controlnet_list, control_dir, line)
+
+''' File.txt - added urls '''
+
+def _process_lines(lines):
+    """Processes text lines, extracts valid URLs with tags/filenames, and ensures uniqueness."""
+    current_tag = None
+    processed_entries = set()  # Store (tag, clean_url) to check uniqueness
+    result_urls = []
+
+    for line in lines:
+        clean_line = line.strip().lower()
+
+        # Update the current tag when detected
+        for prefix, (_, short_tag) in PREFIX_MAP.items():
+            if (f"# {prefix}".lower() in clean_line) or (short_tag and short_tag.lower() in clean_line):
+                current_tag = prefix
+                break
+
+        if not current_tag:
+            continue
+
+        # Normalise the delimiters and process each URL
+        normalized_line = re.sub(r'[\s,]+', ',', line.strip())
+        for url_entry in normalized_line.split(','):
+            url = url_entry.split('#')[0].strip()
+            if not url.startswith('http'):
+                continue
+
+            clean_url = re.sub(r'\[.*?\]', '', url)
+            entry_key = (current_tag, clean_url)    # Uniqueness is determined by a pair (tag, URL)
+
+            if entry_key not in processed_entries:
+                filename = _extract_filename(url_entry)
+                formatted_url = f"{current_tag}:{clean_url}"
+                if filename:
+                    formatted_url += f"[{filename}]"
+
+                result_urls.append(formatted_url)
+                processed_entries.add(entry_key)
+
+    return ', '.join(result_urls) if result_urls else ''
+
+def process_file_downloads(file_urls, additional_lines=None):
+    """Reads URLs from files/HTTP sources."""
+    lines = []
+
+    if additional_lines:
+        lines.extend(additional_lines.splitlines())
+
+    for source in file_urls:
+        if source.startswith('http'):
+            try:
+                response = requests.get(_clean_url(source))
+                response.raise_for_status()
+                lines.extend(response.text.splitlines())
+            except requests.RequestException:
+                continue
+        else:
+            try:
+                with open(source, 'r', encoding='utf-8') as f:
+                    lines.extend(f.readlines())
+            except FileNotFoundError:
+                continue
+
+    return _process_lines(lines)
+
+# File URLs processing
+urls_sources = (Model_url, Vae_url, LoRA_url, Embedding_url, Extensions_url, ADetailer_url)
+file_urls = [f"{f}.txt" if not f.endswith('.txt') else f for f in custom_file_urls.replace(',', '').split()] if custom_file_urls else []
+
+# p -> prefix ; u -> url | Remember: don't touch the prefix!
+prefixed_urls = [f"{p}:{u}" for p, u in zip(PREFIX_MAP, urls_sources) if u for u in u.replace(',', '').split()]
+line += ', ' + ', '.join(prefixed_urls + [process_file_downloads(file_urls, empowerment_output)])
+
+if detailed_download == 'on':
+    print(f"\n\n{COL.Y}# ====== Detailed Download ====== #\n{COL.X}")
+    download(line)
+    print(f"\n{COL.Y}# =============================== #\n{COL.X}")
+else:
+    with capture.capture_output():
+        download(line)
+
+print('\r🏁 Download Complete!' + ' '*15)
+
+
+## Install of Custom extensions
+def _clone_repository(repo, repo_name, extension_dir):
+    """Clones the repository to the specified directory."""
+    repo_name = repo_name or repo.split('/')[-1]
+    command = f"cd {extension_dir} && git clone --depth 1 --recursive {repo} {repo_name} && cd {repo_name} && git fetch"
+    ipySys(command)
+
+extension_type = 'nodes' if UI == 'ComfyUI' else 'extensions'
+
+if extension_repo:
+    print(f"✨ Installing custom {extension_type}...", end='')
+    with capture.capture_output():
+        for repo, repo_name in extension_repo:
+            _clone_repository(repo, repo_name, extension_dir)
+    print(f"\r📦 Installed '{len(extension_repo)}' custom {extension_type}!")
+
+
+# === SPECIAL ===
+## Sorting models `bbox` and `segm` | Only ComfyUI
+if UI == 'ComfyUI':
+    dirs = {'segm': '-seg.pt', 'bbox': None}
+    for d in dirs:
+        os.makedirs(os.path.join(adetailer_dir, d), exist_ok=True)
+
+    for filename in os.listdir(adetailer_dir):
+        src = os.path.join(adetailer_dir, filename)
+
+        if os.path.isfile(src) and filename.endswith('.pt'):
+            dest_dir = 'segm' if filename.endswith('-seg.pt') else 'bbox'
+            dest = os.path.join(adetailer_dir, dest_dir, filename)
+
+            if os.path.exists(dest):
+                os.remove(src)
+            else:
+                shutil.move(src, dest)
+
+
+## List Models and stuff
+ipyRun('run', f"{SCRIPTS}/download-result.py")
