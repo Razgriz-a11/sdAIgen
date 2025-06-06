@@ -49,6 +49,7 @@ class COLORS:
 
 COL = COLORS
 
+
 ## =================== LIBRARIES | VENV ==================
 
 def install_dependencies(commands):
@@ -565,14 +566,15 @@ def download(line):
             filename_match = re.search(r'\[(.*?)\]', item)
             if filename_match:
                 filename_part = filename_match.group(1)
-                url_part = re.sub(r'\[.*?\]', '', item)
+                url_part = re.sub(r'\[.*?\]', '', item).strip() # .strip() added for safety
             else:
-                url_part = item
+                url_part = item.strip() # .strip() added for safety
                 filename_part = None
 
             prefix_from_map = None
+            # Check if any known short tag is present in the URL for inference
             for p, (_, short_tag) in PREFIX_MAP.items():
-                if short_tag and short_tag.lower() in url_part.lower(): # Check if short tag is in URL for inference
+                if short_tag and short_tag.lower() in url_part.lower():
                     prefix_from_map = p
                     break
             download_items.append((url_part, filename_part, prefix_from_map))
@@ -600,6 +602,7 @@ def download(line):
                 print(f"🖼️ Downloading preview image: {image_name}...")
                 m_download(f"{image_url} {target_dir} {image_name}", log=False) # No need for detailed log for images
 
+            # This is the correct way to call manual_download now
             manual_download(download_url, target_dir, final_filename, image_url, image_name)
 
         except Exception as e:
