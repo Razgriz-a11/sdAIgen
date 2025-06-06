@@ -1,9 +1,9 @@
-# ~ download.py | by ANXETY (Refactored for Universal URL Support) ~
+# ~ download.py | by ANXETY ~
 
-from webui_utils import handle_setup_timer  # WEBUI
-from CivitaiAPI import CivitAiAPI         # CivitAI API
-from Manager import m_download            # Every Download
-import json_utils as js                   # JSON
+from webui_utils import handle_setup_timer    # WEBUI
+from CivitaiAPI import CivitAiAPI             # CivitAI API
+from Manager import m_download                # Every Download
+import json_utils as js                       # JSON
 
 from IPython.display import clear_output
 from IPython.utils import capture
@@ -42,12 +42,12 @@ WEBUI = js.read(SETTINGS_PATH, 'WEBUI.webui_path')
 
 # Text Colors (\033)
 class COLORS:
-    R  =  "\033[31m"      # Red
-    G  =  "\033[32m"      # Green
-    Y  =  "\033[33m"      # Yellow
-    B  =  "\033[34m"      # Blue
-    lB =  "\033[36;1m"    # lightBlue
-    X  =  "\033[0m"       # Reset
+    R  =  "\033[31m"     # Red
+    G  =  "\033[32m"     # Green
+    Y  =  "\033[33m"     # Yellow
+    B  =  "\033[34m"     # Blue
+    lB =  "\033[36;1m"   # lightBlue
+    X  =  "\033[0m"      # Reset
 
 COL = COLORS
 
@@ -156,6 +156,11 @@ if venv_needs_reinstall:
     # Update latest UI version...
     js.update(SETTINGS_PATH, 'WEBUI.latest', current_ui)
 
+# if not os.path.exists(VENV):
+#     print('♻️ Installing VENV, this will take some time...')
+#     setup_venv()
+#     clear_output()
+
 ## ================ loading settings V5 ==================
 
 def load_settings(path):
@@ -196,7 +201,7 @@ if not os.path.exists(WEBUI):
     print(f"⌚ Unpacking Stable Diffusion... | WEBUI: {COL.B}{UI}{COL.X}", end='')
 
     ipyRun('run', f"{SCRIPTS}/UIs/{UI}.py")
-    handle_setup_timer(WEBUI, start_timer)      # Setup timer (for timer-extensions)
+    handle_setup_timer(WEBUI, start_timer)        # Setup timer (for timer-extensions)
 
     install_time = time.time() - start_install
     minutes, seconds = divmod(int(install_time), 60)
@@ -222,12 +227,16 @@ if latest_webui or latest_extensions:
         ## Update Webui
         if latest_webui:
             CD(WEBUI)
+            # ipySys('git restore .')
+            # ipySys('git pull -X theirs --rebase --autostash')
+
             ipySys('git stash push --include-untracked')
             ipySys('git pull --rebase')
             ipySys('git stash pop')
 
         ## Update extensions
         if latest_extensions:
+            # ipySys('{\'for dir in \' + WEBUI + \'/extensions/*/; do cd \\'$dir\\' && git reset --hard && git pull; done\'}')
             for entry in os.listdir(f"{WEBUI}/extensions"):
                 dir_path = f"{WEBUI}/extensions/{entry}"
                 if os.path.isdir(dir_path):
@@ -262,15 +271,15 @@ mountGDrive = js.read(SETTINGS_PATH, 'mountGDrive')  # Mount/unmount flag
 # Configuration
 GD_BASE = "/content/drive/MyDrive/sdAIgen"
 SYMLINK_CONFIG = [
-    {    # model
+    {   # model
         'local_dir': model_dir,
         'gdrive_subpath': 'Checkpoints',
     },
-    {    # vae
+    {   # vae
         'local_dir': vae_dir,
         'gdrive_subpath': 'VAE',
     },
-    {    # lora
+    {   # lora
         'local_dir': lora_dir,
         'gdrive_subpath': 'Lora',
     }
@@ -380,7 +389,7 @@ model_files = '_xl-models-data.py' if XL_models else '_models-data.py'
 with open(f"{SCRIPTS}/{model_files}") as f:
     exec(f.read())
 
-## Downloading model and stuff
+## Downloading model and stuff | oh~ Hey! If you're freaked out by that code too, don't worry, me too!
 print('📦 Downloading models and stuff...', end='')
 
 extension_repo = []
@@ -405,7 +414,6 @@ PREFIX_MAP = {
 for dir_path, _ in PREFIX_MAP.values():
     os.makedirs(dir_path, exist_ok=True)
 
-
 ''' Formatted Info Output '''
 
 def _center_text(text, terminal_width=45):
@@ -418,7 +426,7 @@ def format_output(url, dst_dir, file_name, image_url=None, image_name=None):
     if file_name:
         info = _center_text(f"[{file_name.rsplit('.', 1)[0]}]")
     if not file_name and 'drive.google.com' in url:
-        info = _center_text('[GDrive]')
+      info = _center_text('[GDrive]')
 
     sep_line = '───' * 20
 
@@ -433,119 +441,122 @@ def format_output(url, dst_dir, file_name, image_url=None, image_name=None):
 
 ''' Main Download Code '''
 
-class Downloader:
-    def __init__(self, civitai_token=None):
-        self.civitai_api = CivitAiAPI(civitai_token) if civitai_token else None
+def _clean_url(url):
+    url_cleaners = {
+        'huggingface.co': lambda u: u.replace('/blob/', '/resolve/').split('?')[0],
+        'github.com': lambda u: u.replace('/blob/', '/raw/')
+    }
+    for domain, cleaner in url_cleaners.items():
+        if domain in url:
+            return cleaner(url)
+    return url
 
-    def _clean_url(self, url):
-        url_cleaners = {
-            'huggingface.co': lambda u: u.replace('/blob/', '/resolve/').split('?')[0],
-            'github.com': lambda u: u.replace('/blob/', '/raw/')
-        }
-        for domain, cleaner in url_cleaners.items():
-            if domain in url:
-                return cleaner(url)
-        return url
+def _extract_filename(url):
+    """Extract filename from URL with improved pattern matching"""
+    # Check for [filename] pattern
+    if match := re.search(r'\[(.*?)\]', url):
+        return match.group(1)
+    
+    # Extract from URL path
+    parsed = urlparse(url)
+    filename = os.path.basename(parsed.path)
+    
+    # Clean up filename (remove parameters, fragments, etc.)
+    filename = re.sub(r'[\?\#].*', '', filename)
+    
+    # If filename is empty, use domain name
+    if not filename:
+        filename = parsed.netloc.split('.')[-2] if '.' in parsed.netloc else parsed.netloc
+    
+    return filename
 
-    def _extract_filename(self, url):
-        if match := re.search(r'\[(.*?)\]', url):
-            return match.group(1)
-        
-        # For URLs without a scheme, add one to allow parsing
-        if not urlparse(url).scheme:
-            url = 'http://' + url
-            
-        parsed_url = urlparse(url)
-        if any(d in parsed_url.netloc for d in ["civitai.com", "drive.google.com"]):
-            return None
-        
-        # A more robust way to get the filename from the path
-        filename = Path(parsed_url.path).name
-        if not filename:
-             # Fallback for URLs where the filename is in a query parameter
-            if 'filename=' in parsed_url.query:
-                return parsed_url.query.split('filename=')[-1]
-            return None
-            
-        return filename
+def _unpack_zips():
+    """Recursively extract and delete all .zip files in PREFIX_MAP directories."""
+    for dir_path, _ in PREFIX_MAP.values():
+        for zip_file in Path(dir_path).rglob('*.zip'):
+            with zipfile.ZipFile(zip_file, 'r') as zf:
+                zf.extractall(zip_file.with_suffix(''))
+            zip_file.unlink()
 
-    def _unpack_zips(self):
-        """Recursively extract and delete all .zip files in PREFIX_MAP directories."""
-        for dir_path, _ in PREFIX_MAP.values():
-            for zip_file in Path(dir_path).rglob('*.zip'):
-                with zipfile.ZipFile(zip_file, 'r') as zf:
-                    zf.extractall(zip_file.with_suffix(''))
-                zip_file.unlink()
+# Download Core
 
-    def _process_download_link(self, link):
-        """Processes a download link, splitting prefix, URL, and filename."""
-        link = self._clean_url(link)
-        if ':' in link:
-            prefix, path = link.split(':', 1)
-            if prefix in PREFIX_MAP:
-                return prefix, re.sub(r'\[.*?\]', '', path), self._extract_filename(path)
-        return None, link, None
+def _process_download_link(link):
+    """Processes a download link, splitting prefix, URL, and filename."""
+    link = _clean_url(link)
+    if ':' in link:
+        prefix, path = link.split(':', 1)
+        if prefix in PREFIX_MAP:
+            return prefix, re.sub(r'\[.*?\]', '', path), _extract_filename(path)
+    return None, link, None
 
-    def download(self, line):
-        """Downloads files from comma-separated links, processes prefixes, and unpacks zips post-download."""
-        for link in filter(None, map(str.strip, line.split(','))):
-            prefix, url, filename = self._process_download_link(link)
+def download(line):
+    """Downloads files from comma-separated links, processes prefixes, and unpacks zips post-download."""
+    for link in filter(None, map(str.strip, line.split(',')):
+        prefix, url, filename = _process_download_link(link)
 
-            if prefix:
-                dir_path, _ = PREFIX_MAP[prefix]
-                if prefix == 'extension':
-                    extension_repo.append((url, filename))
-                    continue
-                try:
-                    self.manual_download(url, dir_path, filename, prefix)
-                except Exception as e:
-                    print(f"\n> Download error: {e}")
+        if prefix:
+            dir_path, _ = PREFIX_MAP[prefix]
+            if prefix == 'extension':
+                extension_repo.append((url, filename))
+                continue
+            try:
+                manual_download(url, dir_path, filename, prefix)
+            except Exception as e:
+                print(f"\n> Download error: {e}")
+        else:
+            # Handle direct URL without prefix
+            parts = url.split()
+            if len(parts) >= 3:
+                url, dst_dir, file_name = parts[0], parts[1], parts[2]
+                manual_download(url, dst_dir, file_name)
             else:
-                try:
-                    url, dst_dir, file_name = url.split()
-                    self.manual_download(url, dst_dir, file_name)
-                except ValueError:
-                    print(f"\n> Invalid download format for: {link}. Skipping.")
+                print(f"Invalid download format: {url}")
 
+    _unpack_zips()
 
-        self._unpack_zips()
+def manual_download(url, dst_dir, file_name=None, prefix=None):
+    """Download from any URL with enhanced handling"""
+    clean_url = url
+    image_url, image_name = None, None
+    download_url = url  # Default to original URL
 
-    def manual_download(self, url, dst_dir, file_name=None, prefix=None):
-        clean_url = url
-        image_url, image_name = None, None
+    # CivitAI handling
+    if 'civitai' in url:
+        api = CivitAiAPI(civitai_token)
+        if not (data := api.validate_download(url, file_name)):
+            return
 
-        if 'civitai' in url and self.civitai_api:
-            if not (data := self.civitai_api.validate_download(url, file_name)):
-                return
+        model_type, file_name = data.model_type, data.model_name    # Type, name
+        clean_url, download_url = data.clean_url, data.download_url  # Clean_URL, URL
+        image_url, image_name = data.image_url, data.image_name     # Img_URL, Img_Name
 
-            model_type, file_name = data.model_type, data.model_name    # Type, name
-            clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL
-            image_url, image_name = data.image_url, data.image_name     # Img_URL, Img_Name
+        # Download preview images
+        if image_url and image_name:
+            m_download(f"{image_url} {dst_dir} {image_name}")
 
-            # Download preview images
-            if image_url and image_name:
-                m_download(f"{image_url} {dst_dir} {image_name}")
+    # Generic URL handling
+    else:
+        clean_url = _clean_url(url)
+        download_url = clean_url
 
-        elif any(s in url for s in ('github', 'huggingface.co')):
-            if file_name and '.' not in file_name:
-                file_name += f".{clean_url.split('.')[-1]}"
-        
-        else: # Generic URL handler
-            if not file_name:
-                file_name = self._extract_filename(url)
-            if not file_name:
-                # If filename cannot be extracted, you might want to skip or use a default
-                print(f"\n> Could not determine filename for: {url}. Skipping.")
-                return
+        # Extract filename if not provided
+        if not file_name:
+            file_name = _extract_filename(url)
+            
+        # Add extension if missing
+        if file_name and '.' not in file_name:
+            parsed = urlparse(clean_url)
+            url_filename = os.path.basename(parsed.path)
+            if '.' in url_filename:
+                ext = url_filename.split('.')[-1].split('?')[0]
+                if ext and 1 <= len(ext) <= 5 and ext.isalnum():
+                    file_name += f".{ext}"
 
+    # Formatted info output
+    format_output(clean_url, dst_dir, file_name, image_url, image_name)
 
-        # Formatted info output
-        format_output(clean_url, dst_dir, file_name, image_url, image_name)
-
-        # Downloading
-        m_download(f"{url} {dst_dir} {file_name or ''}", log=True)
-
-downloader = Downloader(civitai_token)
+    # Downloading
+    m_download(f"{download_url} {dst_dir} {file_name or ''}", log=True)
 
 ''' SubModels - Added URLs '''
 
@@ -653,7 +664,7 @@ def _process_lines(lines):
             entry_key = (current_tag, clean_url)    # Uniqueness is determined by a pair (tag, URL)
 
             if entry_key not in processed_entries:
-                filename = downloader._extract_filename(url_entry)
+                filename = _extract_filename(url_entry)
                 formatted_url = f"{current_tag}:{clean_url}"
                 if filename:
                     formatted_url += f"[{filename}]"
@@ -673,7 +684,7 @@ def process_file_downloads(file_urls, additional_lines=None):
     for source in file_urls:
         if source.startswith('http'):
             try:
-                response = requests.get(downloader._clean_url(source))
+                response = requests.get(_clean_url(source))
                 response.raise_for_status()
                 lines.extend(response.text.splitlines())
             except requests.RequestException:
@@ -697,11 +708,11 @@ line += ', ' + ', '.join(prefixed_urls + [process_file_downloads(file_urls, empo
 
 if detailed_download == 'on':
     print(f"\n\n{COL.Y}# ====== Detailed Download ====== #\n{COL.X}")
-    downloader.download(line)
+    download(line)
     print(f"\n{COL.Y}# =============================== #\n{COL.X}")
 else:
     with capture.capture_output():
-        downloader.download(line)
+        download(line)
 
 print('\r🏁 Download Complete!' + ' '*15)
 
