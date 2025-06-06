@@ -606,6 +606,7 @@ def _process_download_link(link):
 def download(line):
     """Downloads files from comma-separated links, processes prefixes, and unpacks zips post-download."""
     for link in filter(None, map(str.strip, line.split(','))):
+        # Always use _process_download_link to parse the link string
         prefix, url, dst_dir, filename = _process_download_link(link)
 
         if url is None: # Handle cases where _process_download_link couldn't parse the link
@@ -624,6 +625,7 @@ def download(line):
                 print(f"\n> Download error: {e}")
         else: # General download (no prefix specified, or direct URL with optional path/filename)
             try:
+                # The values are already correctly unpacked by _process_download_link
                 manual_download(url, dst_dir, filename)
             except Exception as e:
                 print(f"\n> Download error: {e}")
@@ -744,166 +746,4 @@ def handle_submodels(selection, num_selection, model_dict, dst_dir, base_url, in
 line = ""
 line = handle_submodels(model, model_num, model_list, model_dir, line)
 line = handle_submodels(vae, vae_num, vae_list, vae_dir, line)
-line = handle_submodels(controlnet, controlnet_num, controlnet_list, control_dir, line)
-
-''' File.txt - added urls '''
-
-def _process_lines(lines):
-    """Processes text lines, extracts valid URLs with tags/filenames, and ensures uniqueness."""
-    current_tag = None
-    processed_entries = set()    # Store (tag, clean_url) to check uniqueness
-    result_urls = []
-
-    for line in lines:
-        clean_line = line.strip()
-
-        # Update the current tag when detected
-        found_tag = False
-        for prefix, (_, short_tag) in PREFIX_MAP.items():
-            if (f"# {prefix}".lower() in clean_line.lower()) or (short_tag and short_tag.lower() in clean_line.lower()):
-                current_tag = prefix
-                found_tag = True
-                break
-
-        # Process the line based on whether a tag was found or if it's a direct URL
-        if found_tag:
-            # If a tag is explicitly present, it's a prefixed download
-            normalized_line = re.sub(r'[\s,]+', ',', clean_line)
-            for url_entry in normalized_line.split(','):
-                url_part = url_entry.split('#')[0].strip()
-                if not url_part.startswith('http'):
-                    continue
-
-                clean_url_for_key = re.sub(r'\[.*?\]', '', url_part)
-                entry_key = (current_tag, clean_url_for_key)
-
-                if entry_key not in processed_entries:
-                    filename = _extract_filename(url_part)
-                    formatted_url = f"{current_tag}:{clean_url_for_key}"
-                    if filename:
-                        formatted_url += f"[{filename}]"
-                    result_urls.append(formatted_url)
-                    processed_entries.add(entry_key)
-        elif clean_line.startswith('http'):
-            # It's a direct URL, handle as general download
-            # Use shlex.split to handle spaces in potential path/filename components
-            parts = shlex.split(clean_line)
-            url = parts[0]
-            dst_dir = str(Path.cwd())
-            file_name = None
-
-            if len(parts) > 1:
-                if Path(parts[1]).is_dir() or not Path(parts[1]).suffix:
-                    dst_dir = parts[1]
-                    if len(parts) > 2:
-                        file_name = parts[2]
-                else:
-                    file_name = parts[1]
-            
-            if not file_name:
-                file_name = _extract_filename(url)
-
-            entry_key = (None, url) # For general downloads, key only on the URL
-            if entry_key not in processed_entries:
-                result_urls.append(f"{url} {dst_dir} {file_name if file_name else ''}".strip())
-                processed_entries.add(entry_key)
-
-    return ', '.join(result_urls) if result_urls else ''
-
-
-def process_file_downloads(file_urls, additional_lines=None):
-    """Reads URLs from files/HTTP sources."""
-    lines = []
-
-    if additional_lines:
-        lines.extend(additional_lines.splitlines())
-
-    for source in file_urls:
-        if source.startswith('http'):
-            try:
-                response = requests.get(_clean_url(source))
-                response.raise_for_status()
-                lines.extend(response.text.splitlines())
-            except requests.RequestException:
-                continue
-        else:
-            try:
-                with open(source, 'r', encoding='utf-8') as f:
-                    lines.extend(f.readlines())
-            except FileNotFoundError:
-                continue
-
-    return _process_lines(lines)
-
-# File URLs processing
-urls_sources = (Model_url, Vae_url, LoRA_url, Embedding_url, Extensions_url, ADetailer_url)
-file_urls = [f"{f}.txt" if not f.endswith('.txt') else f for f in custom_file_urls.replace(',', '').split()] if custom_file_urls else []
-
-# p -> prefix ; u -> url | Remember: don't touch the prefix!
-prefixed_urls = [f"{p}:{u}" for p, u in zip(PREFIX_MAP, urls_sources) if u for u in u.replace(',', '').split()]
-line += ', ' + ', '.join(prefixed_urls + [process_file_downloads(file_urls, empowerment_output)])
-
-# Add a placeholder for directly passed URLs
-# Example: If you want to download a specific file, you can set this variable.
-# For example: url_to_download_any_file = "https://example.com/somefile.zip /content/my_downloads/my_archive.zip"
-# Or simple: url_to_download_any_file = "https://orchestration.civitai.com/v1/consumer/jobs/e4799ea1-fbff-40d4-81cd-6184248fab5e/assets/Serapias_Alice.safetensors /root/ComfyUI/models/loras/Serapias_Alice.safetensors"
-# If no destination directory is given, it will default to the current working directory.
-# If no filename is given, it will try to infer it from the URL.
-url_to_download_any_file = "https://orchestration.civitai.com/v1/consumer/jobs/e4799ea1-fbff-40d4-81cd-6184248fab5e/assets/Serapias_Alice.safetensors /root/ComfyUI/models/loras/Serapias_Alice.safetensors"
-
-
-if 'url_to_download_any_file' in locals() and url_to_download_any_file:
-    # Ensure the path is properly formatted for the `download` function
-    line += ", " + url_to_download_any_file
-
-
-if detailed_download == 'on':
-    print(f"\n\n{COL.Y}# ====== Detailed Download ====== #\n{COL.X}")
-    download(line)
-    print(f"\n{COL.Y}# =============================== #\n{COL.X}")
-else:
-    with capture.capture_output():
-        download(line)
-
-print('\r🏁 Download Complete!' + ' '*15)
-
-
-## Install of Custom extensions
-def _clone_repository(repo, repo_name, extension_dir):
-    """Clones the repository to the specified directory."""
-    repo_name = repo_name or repo.split('/')[-1]
-    command = f"cd {extension_dir} && git clone --depth 1 --recursive {repo} {repo_name} && cd {repo_name} && git fetch"
-    ipySys(command)
-
-extension_type = 'nodes' if UI == 'ComfyUI' else 'extensions'
-
-if extension_repo:
-    print(f"✨ Installing custom {extension_type}...", end='')
-    with capture.capture_output():
-        for repo, repo_name in extension_repo:
-            _clone_repository(repo, repo_name, extension_dir)
-    print(f"\r📦 Installed '{len(extension_repo)}' custom {extension_type}!")
-
-
-# === SPECIAL ===
-## Sorting models `bbox` and `segm` | Only ComfyUI
-if UI == 'ComfyUI':
-    dirs = {'segm': '-seg.pt', 'bbox': None}
-    for d in dirs:
-        os.makedirs(os.path.join(adetailer_dir, d), exist_ok=True)
-
-    for filename in os.listdir(adetailer_dir):
-        src = os.path.join(adetailer_dir, filename)
-
-        if os.path.isfile(src) and filename.endswith('.pt'):
-            dest_dir = 'segm' if filename.endswith('-seg.pt') else 'bbox'
-            dest = os.path.join(adetailer_dir, dest_dir, filename)
-
-            if os.path.exists(dest):
-                os.remove(src)
-            else:
-                shutil.move(src, dest)
-
-
-## List Models and stuff
-ipyRun('run', f"{SCRIPTS}/download-result.py")
+line = handle_submodels(controlnet, controlnet_num,
