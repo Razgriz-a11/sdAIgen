@@ -1,9 +1,9 @@
 # ~ download.py | by ANXETY ~
 
 from webui_utils import handle_setup_timer    # WEBUI
-from CivitaiAPI import CivitAiAPI             # CivitAI API
-from Manager import m_download                # Every Download
-import json_utils as js                       # JSON
+from CivitaiAPI import CivitAiAPI              # CivitAI API
+from Manager import m_download                 # Every Download
+import json_utils as js                        # JSON
 
 from IPython.display import clear_output
 from IPython.utils import capture
@@ -42,11 +42,11 @@ WEBUI = js.read(SETTINGS_PATH, 'WEBUI.webui_path')
 
 # Text Colors (\033)
 class COLORS:
-    R  =  "\033[31m"     # Red
-    G  =  "\033[32m"     # Green
-    Y  =  "\033[33m"     # Yellow
-    B  =  "\033[34m"     # Blue
-    lB =  "\033[36;1m"   # lightBlue
+    R  =  "\033[31m"      # Red
+    G  =  "\033[32m"      # Green
+    Y  =  "\033[33m"      # Yellow
+    B  =  "\033[34m"      # Blue
+    lB =  "\033[36;1m"    # lightBlue
     X  =  "\033[0m"      # Reset
 
 COL = COLORS
@@ -120,7 +120,7 @@ if not js.key_exists(SETTINGS_PATH, 'ENVIRONMENT.install_deps', True):
         'ngrok': "wget -qO ngrok-v3-stable-linux-amd64.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz; tar -xzf ngrok-v3-stable-linux-amd64.tgz -C /usr/bin; rm -f ngrok-v3-stable-linux-amd64.tgz"
     }
 
-    print('💿 Установка библиотек займет немного времени.')
+    print('💿 Installing the libraries will take a bit of time.')
     install_packages(install_lib)
     clear_output()
     js.update(SETTINGS_PATH, 'ENVIRONMENT.install_deps', True)
@@ -138,7 +138,7 @@ venv_needs_reinstall = (
 
 if venv_needs_reinstall:
     if VENV.exists():
-        print("🗑️ Удаление старого venv...")
+        print("🗑️ Remove old venv...")
         shutil.rmtree(VENV)
         clear_output()
 
@@ -149,7 +149,7 @@ if venv_needs_reinstall:
         venv_url = "https://huggingface.co/NagisaNao/ANXETY/resolve/main/python31017-venv-torch251-cu121-C-fca.tar.lz4"
         py_version = '(3.10.17)'
 
-    print(f"♻️ Установка VENV {py_version}, это займет некоторое время...")
+    print(f"♻️ Installing VENV {py_version}, this will take some time...")
     setup_venv(venv_url)
     clear_output()
 
@@ -157,7 +157,7 @@ if venv_needs_reinstall:
     js.update(SETTINGS_PATH, 'WEBUI.latest', current_ui)
 
 # if not os.path.exists(VENV):
-#     print('♻️ Установка VENV, это займет некоторое время...')
+#     print('♻️ Installing VENV, this will take some time...')
 #     setup_venv()
 #     clear_output()
 
@@ -182,7 +182,7 @@ locals().update(settings)
 ## ======================== WEBUI ========================
 
 if UI in ['A1111', 'SD-UX'] and not os.path.exists('/root/.cache/huggingface/hub/models--Bingsu--adetailer'):
-    print('🚚 Распаковка кэша моделей ADetailer...')
+    print('🚚 Unpacking ADetailer model cache...')
 
     name_zip = 'hf_cache_adetailer'
     chache_url = 'https://huggingface.co/NagisaNao/ANXETY/resolve/main/hf_chache_adetailer.zip'
@@ -198,28 +198,28 @@ start_timer = js.read(SETTINGS_PATH, 'ENVIRONMENT.start_timer')
 
 if not os.path.exists(WEBUI):
     start_install = time.time()
-    print(f"⌚ Распаковка Stable Diffusion... | WEBUI: {COL.B}{UI}{COL.X}", end='')
+    print(f"⌚ Unpacking Stable Diffusion... | WEBUI: {COL.B}{UI}{COL.X}", end='')
 
     ipyRun('run', f"{SCRIPTS}/UIs/{UI}.py")
     handle_setup_timer(WEBUI, start_timer)		# Setup timer (for timer-extensions)
 
     install_time = time.time() - start_install
     minutes, seconds = divmod(int(install_time), 60)
-    print(f"\r🚀 Распаковка {COL.B}{UI}{COL.X} Завершена! {minutes:02}:{seconds:02} ⚡" + ' '*25)
+    print(f"\r🚀 Unpacking {COL.B}{UI}{COL.X} is complete! {minutes:02}:{seconds:02} ⚡" + ' '*25)
 
 else:
-    print(f"🔧 Текущий WebUI: {COL.B}{UI}{COL.X}")
-    print('🚀 Распаковка завершена. Пропуск. ⚡')
+    print(f"🔧 Current WebUI: {COL.B}{UI}{COL.X}")
+    print('🚀 Unpacking is complete. Pass. ⚡')
 
     timer_env = handle_setup_timer(WEBUI, start_timer)
     elapsed_time = str(timedelta(seconds=time.time() - timer_env)).split('.')[0]
-    print(f"⌚️ Продолжительность сеанса: {COL.Y}{elapsed_time}{COL.X}")
+    print(f"⌚️ Session duration: {COL.Y}{elapsed_time}{COL.X}")
 
 
 ## Changes extensions and WebUi
 if latest_webui or latest_extensions:
-    action = 'WebUI и Расширений' if latest_webui and latest_extensions else ('WebUI' if latest_webui else 'Расширений')
-    print(f"⌚️ Обновление {action}...", end='')
+    action = 'WebUI and Extensions' if latest_webui and latest_extensions else ('WebUI' if latest_webui else 'Extensions')
+    print(f"⌚️ Update {action}...", end='')
     with capture.capture_output():
         ipySys('git config --global user.email "you@example.com"')
         ipySys('git config --global user.name "Your Name"')
@@ -243,7 +243,7 @@ if latest_webui or latest_extensions:
                     subprocess.run(['git', 'reset', '--hard'], cwd=dir_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     subprocess.run(['git', 'pull'], cwd=dir_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    print(f"\r✨ Обновление {action} Завершено!")
+    print(f"\r✨ Update {action} Completed!")
 
 
 # === FIXING EXTENSIONS ===
@@ -254,14 +254,14 @@ with capture.capture_output():
 
 ## Version switching
 if commit_hash:
-    print('🔄 Переключаемся на указанную версию...', end='')
+    print('🔄 Switching to the specified version...', end='')
     with capture.capture_output():
         CD(WEBUI)
         ipySys('git config --global user.email "you@example.com"')
         ipySys('git config --global user.name "Your Name"')
         ipySys('git reset --hard {commit_hash}')
         ipySys('git pull origin {commit_hash}')    # Get last changes in branch
-    print(f"\r🔄 Переключение завершено! Текущий коммит: {COL.B}{commit_hash}{COL.X}")
+    print(f"\r🔄 Switch complete! Current commit: {COL.B}{commit_hash}{COL.X}")
 
 
 # === Google Drive Mounting | EXCLUSIVE for Colab ===
@@ -271,15 +271,15 @@ mountGDrive = js.read(SETTINGS_PATH, 'mountGDrive')  # Mount/unmount flag
 # Configuration
 GD_BASE = "/content/drive/MyDrive/sdAIgen"
 SYMLINK_CONFIG = [
-    {   # model
+    {    # model
         'local_dir': model_dir,
         'gdrive_subpath': 'Checkpoints',
     },
-    {   # vae
+    {    # vae
         'local_dir': vae_dir,
         'gdrive_subpath': 'VAE',
     },
-    {   # lora
+    {    # lora
         'local_dir': lora_dir,
         'gdrive_subpath': 'Lora',
     }
@@ -325,13 +325,13 @@ def handle_gdrive(mount_flag, log=False):
     """Main handler for Google Drive mounting and symlink management"""
     if mount_flag:
         if os.path.exists("/content/drive/MyDrive"):
-            print("🎉 Google Drive подключен~")
+            print("🎉 Google Drive is connected~")
         else:
             try:
-                print("⏳ Подключаемся к Google Drive...", end='')
+                print("⏳ Mounting Google Drive...", end='')
                 with capture.capture_output():
                     drive.mount('/content/drive')
-                print("\r🚀 Google Drive успешно подключен!")
+                print("\r🚀 Google Drive mounted successfully!")
             except Exception as e:
                 clear_output()
                 print(f"❌ Mounting failed: {str(e)}\n")
@@ -351,7 +351,7 @@ def handle_gdrive(mount_flag, log=False):
                 dst = os.path.join(GD_BASE, cfg['gdrive_subpath'])
                 create_symlink(src, dst, log)
 
-            print("✅ Симлинки успешно созданы!")
+            print("✅ Symlinks created successfully!")
 
         except Exception as e:
             print(f"❌ Setup error: {str(e)}\n")
@@ -363,11 +363,11 @@ def handle_gdrive(mount_flag, log=False):
     else:
         if os.path.exists("/content/drive/MyDrive"):
             try:
-                print("⏳ Отключаемся от Google Drive...", end='')
+                print("⏳ Unmounting Google Drive...", end='')
                 with capture.capture_output():
                     drive.flush_and_unmount()
                     os.system("rm -rf /content/drive")
-                print("\r✅ Диск успешно отключен и удалён!")
+                print("\r✅ Google Drive unmounted and cleaned!")
 
                 # Remove symlinks
                 for cfg in SYMLINK_CONFIG:
@@ -375,7 +375,7 @@ def handle_gdrive(mount_flag, log=False):
                     if os.path.islink(link_path):
                         os.unlink(link_path)
 
-                print("🗑️ Симлинки успешно удалены!")
+                print("🗑️ Symlinks removed successfully!")
 
             except Exception as e:
                 print(f"❌ Unmount error: {str(e)}\n")
@@ -390,7 +390,7 @@ with open(f"{SCRIPTS}/{model_files}") as f:
     exec(f.read())
 
 ## Downloading model and stuff | oh~ Hey! If you're freaked out by that code too, don't worry, me too!
-print('📦 Скачивание моделей и прочего...', end='')
+print('📦 Downloading models and stuff...', end='')
 
 extension_repo = []
 PREFIX_MAP = {
@@ -452,10 +452,14 @@ def _clean_url(url):
     return url
 
 def _extract_filename(url):
-    if match := re.search(r'\[(.*?)\]', url):
-        return match.group(1)
-    if any(d in urlparse(url).netloc for d in ["civitai.com", "drive.google.com"]):
-        return None
+    if match := re.search(r'\[(.*?)', url): # Adjusted regex to correctly capture filename in brackets
+        return match.group(1).split(']')[0] # Extract content and remove trailing ']'
+    if any(d in urlparse(url).netloc for d in ["civitai.com", "drive.google.com", "orchestration.civitai.com"]):
+        # For Civitai direct URLs, try to get the filename from the path
+        if 'orchestration.civitai.com' in url:
+            return url.split('/')[-1].split('?')[0]
+        # For other known domains, if no bracketed filename, let manual_download infer
+        return Path(urlparse(url).path).name if Path(urlparse(url).path).name else None # If no filename in path, return None
     return Path(urlparse(url).path).name
 
 def _unpack_zips():
@@ -471,18 +475,50 @@ def _unpack_zips():
 def _process_download_link(link):
     """Processes a download link, splitting prefix, URL, and filename."""
     link = _clean_url(link)
-    if ':' in link:
+    
+    # Try to parse as a general URL with optional destination and filename
+    # Format: "url [destination_dir] [filename]"
+    parts = shlex.split(link) # Use shlex to handle spaces in paths/filenames correctly
+
+    if len(parts) >= 1 and parts[0].startswith('http'):
+        url = parts[0]
+        dst_dir = str(Path.cwd()) # Default to current working directory
+        file_name = None
+
+        if len(parts) > 1:
+            # Check if the second part is a valid directory
+            if Path(parts[1]).is_dir() or not Path(parts[1]).suffix: # Assume it's a directory if it exists or has no extension
+                dst_dir = parts[1]
+                if len(parts) > 2:
+                    file_name = parts[2]
+            else: # If it's not a directory, assume it's the filename
+                file_name = parts[1]
+
+        # Extract filename if not explicitly provided
+        if not file_name:
+            file_name = _extract_filename(url)
+
+        return None, url, dst_dir, file_name # Return None for prefix to indicate general download
+    
+    # Fallback to original prefixed format if not a general URL
+    if ':' in link and link.split(':', 1)[0] in PREFIX_MAP:
         prefix, path = link.split(':', 1)
-        if prefix in PREFIX_MAP:
-            return prefix, re.sub(r'\[.*?\]', '', path), _extract_filename(path)
-    return None, link, None
+        return prefix, re.sub(r'\[.*?\]', '', path), None, _extract_filename(path)
+    
+    # If nothing matches, it's an unhandled format, return None for all
+    return None, None, None, None
+
 
 def download(line):
     """Downloads files from comma-separated links, processes prefixes, and unpacks zips post-download."""
     for link in filter(None, map(str.strip, line.split(','))):
-        prefix, url, filename = _process_download_link(link)
+        prefix, url, dst_dir, filename = _process_download_link(link)
 
-        if prefix:
+        if url is None: # Handle cases where _process_download_link couldn't parse the link
+            print(f"\n{COL.R}Skipping invalid download link: {link}{COL.X}")
+            continue
+
+        if prefix: # Original prefixed download
             dir_path, _ = PREFIX_MAP[prefix]
             if prefix == 'extension':
                 extension_repo.append((url, filename))
@@ -491,9 +527,11 @@ def download(line):
                 manual_download(url, dir_path, filename, prefix)
             except Exception as e:
                 print(f"\n> Download error: {e}")
-        else:
-            url, dst_dir, file_name = url.split()
-            manual_download(url, dst_dir, file_name)
+        else: # General download (no prefix specified, or direct URL with optional path/filename)
+            try:
+                manual_download(url, dst_dir, filename)
+            except Exception as e:
+                print(f"\n> Download error: {e}")
 
     _unpack_zips()
 
@@ -501,28 +539,40 @@ def manual_download(url, dst_dir, file_name=None, prefix=None):
     clean_url = url
     image_url, image_name = None, None
 
-    if 'civitai' in url:
+    # Handle Civitai URLs ONLY if they are part of the prefixed system or specifically identified as Civitai API URLs
+    if 'civitai.com' in url and prefix is not None and prefix in PREFIX_MAP and prefix != 'extension':
         api = CivitAiAPI(civitai_token)
-        if not (data := api.validate_download(url, file_name)):
-            return
+        data = api.validate_download(url, file_name)
+        if not data: # Check if validation failed
+            print(f"\n{COL.R}[API Error]: Invalid Civitai model URL or API validation failed: {url}{COL.X}")
+            return # Exit if API validation fails
 
         model_type, file_name = data.model_type, data.model_name    # Type, name
         clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL
-        image_url, image_name = data.image_url, data.image_name     # Img_URL, Img_Name
+        image_url, image_name = data.image_url, data.image_name    # Img_URL, Img_Name
 
         # Download preview images
         if image_url and image_name:
             m_download(f"{image_url} {dst_dir} {image_name}")
 
-    elif any(s in url for s in ('github', 'huggingface.co')):
+    elif any(s in url for s in ('github', 'huggingface.co')) and prefix is not None and prefix in PREFIX_MAP:
         if file_name and '.' not in file_name:
             file_name += f".{clean_url.split('.')[-1]}"
+    else: # For general downloads and direct Civitai URLs that bypass API
+        if not file_name:
+            file_name = Path(urlparse(url).path).name
+            if not file_name and 'orchestration.civitai.com' in url:
+                file_name = url.split('/')[-1].split('?')[0] # Get filename from direct Civitai asset URL
+
+    # Ensure dst_dir exists
+    os.makedirs(dst_dir, exist_ok=True)
 
     # Formatted info output
     format_output(clean_url, dst_dir, file_name, image_url, image_name)
 
     # Downloading
     m_download(f"{url} {dst_dir} {file_name or ''}", log=True)
+
 
 ''' SubModels - Added URLs '''
 
@@ -604,41 +654,65 @@ line = handle_submodels(controlnet, controlnet_num, controlnet_list, control_dir
 def _process_lines(lines):
     """Processes text lines, extracts valid URLs with tags/filenames, and ensures uniqueness."""
     current_tag = None
-    processed_entries = set()  # Store (tag, clean_url) to check uniqueness
+    processed_entries = set()    # Store (tag, clean_url) to check uniqueness
     result_urls = []
 
     for line in lines:
-        clean_line = line.strip().lower()
+        clean_line = line.strip()
 
         # Update the current tag when detected
+        found_tag = False
         for prefix, (_, short_tag) in PREFIX_MAP.items():
-            if (f"# {prefix}".lower() in clean_line) or (short_tag and short_tag.lower() in clean_line):
+            if (f"# {prefix}".lower() in clean_line.lower()) or (short_tag and short_tag.lower() in clean_line.lower()):
                 current_tag = prefix
+                found_tag = True
                 break
 
-        if not current_tag:
-            continue
+        # Process the line based on whether a tag was found or if it's a direct URL
+        if found_tag:
+            # If a tag is explicitly present, it's a prefixed download
+            normalized_line = re.sub(r'[\s,]+', ',', clean_line)
+            for url_entry in normalized_line.split(','):
+                url_part = url_entry.split('#')[0].strip()
+                if not url_part.startswith('http'):
+                    continue
 
-        # Normalise the delimiters and process each URL
-        normalized_line = re.sub(r'[\s,]+', ',', line.strip())
-        for url_entry in normalized_line.split(','):
-            url = url_entry.split('#')[0].strip()
-            if not url.startswith('http'):
-                continue
+                clean_url_for_key = re.sub(r'\[.*?\]', '', url_part)
+                entry_key = (current_tag, clean_url_for_key)
 
-            clean_url = re.sub(r'\[.*?\]', '', url)
-            entry_key = (current_tag, clean_url)    # Uniqueness is determined by a pair (tag, URL)
+                if entry_key not in processed_entries:
+                    filename = _extract_filename(url_part)
+                    formatted_url = f"{current_tag}:{clean_url_for_key}"
+                    if filename:
+                        formatted_url += f"[{filename}]"
+                    result_urls.append(formatted_url)
+                    processed_entries.add(entry_key)
+        elif clean_line.startswith('http'):
+            # It's a direct URL, handle as general download
+            # Use shlex.split to handle spaces in potential path/filename components
+            parts = shlex.split(clean_line)
+            url = parts[0]
+            dst_dir = str(Path.cwd())
+            file_name = None
 
+            if len(parts) > 1:
+                if Path(parts[1]).is_dir() or not Path(parts[1]).suffix:
+                    dst_dir = parts[1]
+                    if len(parts) > 2:
+                        file_name = parts[2]
+                else:
+                    file_name = parts[1]
+            
+            if not file_name:
+                file_name = _extract_filename(url)
+
+            entry_key = (None, url) # For general downloads, key only on the URL
             if entry_key not in processed_entries:
-                filename = _extract_filename(url_entry)
-                formatted_url = f"{current_tag}:{clean_url}"
-                if filename:
-                    formatted_url += f"[{filename}]"
-
-                result_urls.append(formatted_url)
+                result_urls.append(f"{url} {dst_dir} {file_name if file_name else ''}".strip())
                 processed_entries.add(entry_key)
 
     return ', '.join(result_urls) if result_urls else ''
+
 
 def process_file_downloads(file_urls, additional_lines=None):
     """Reads URLs from files/HTTP sources."""
@@ -672,15 +746,29 @@ file_urls = [f"{f}.txt" if not f.endswith('.txt') else f for f in custom_file_ur
 prefixed_urls = [f"{p}:{u}" for p, u in zip(PREFIX_MAP, urls_sources) if u for u in u.replace(',', '').split()]
 line += ', ' + ', '.join(prefixed_urls + [process_file_downloads(file_urls, empowerment_output)])
 
+# Add a placeholder for directly passed URLs
+# Example: If you want to download a specific file, you can set this variable.
+# For example: url_to_download_any_file = "https://example.com/somefile.zip /content/my_downloads/my_archive.zip"
+# Or simple: url_to_download_any_file = "https://orchestration.civitai.com/v1/consumer/jobs/e4799ea1-fbff-40d4-81cd-6184248fab5e/assets/Serapias_Alice.safetensors /root/ComfyUI/models/loras/Serapias_Alice.safetensors"
+# If no destination directory is given, it will default to the current working directory.
+# If no filename is given, it will try to infer it from the URL.
+url_to_download_any_file = "https://orchestration.civitai.com/v1/consumer/jobs/e4799ea1-fbff-40d4-81cd-6184248fab5e/assets/Serapias_Alice.safetensors /root/ComfyUI/models/loras/Serapias_Alice.safetensors"
+
+
+if 'url_to_download_any_file' in locals() and url_to_download_any_file:
+    # Ensure the path is properly formatted for the `download` function
+    line += ", " + url_to_download_any_file
+
+
 if detailed_download == 'on':
-    print(f"\n\n{COL.Y}# ====== Подробная Загрузка ====== #\n{COL.X}")
+    print(f"\n\n{COL.Y}# ====== Detailed Download ====== #\n{COL.X}")
     download(line)
     print(f"\n{COL.Y}# =============================== #\n{COL.X}")
 else:
     with capture.capture_output():
         download(line)
 
-print('\r🏁 Скачивание Завершено!' + ' '*15)
+print('\r🏁 Download Complete!' + ' '*15)
 
 
 ## Install of Custom extensions
@@ -690,14 +778,14 @@ def _clone_repository(repo, repo_name, extension_dir):
     command = f"cd {extension_dir} && git clone --depth 1 --recursive {repo} {repo_name} && cd {repo_name} && git fetch"
     ipySys(command)
 
-extension_type = 'нодов' if UI == 'ComfyUI' else 'расширений'
+extension_type = 'nodes' if UI == 'ComfyUI' else 'extensions'
 
 if extension_repo:
-    print(f"✨ Установка кастомных {extension_type}...", end='')
+    print(f"✨ Installing custom {extension_type}...", end='')
     with capture.capture_output():
         for repo, repo_name in extension_repo:
             _clone_repository(repo, repo_name, extension_dir)
-    print(f"\r📦 Установлено '{len(extension_repo)}' кастомных {extension_type}!")
+    print(f"\r📦 Installed '{len(extension_repo)}' custom {extension_type}!")
 
 
 # === SPECIAL ===
