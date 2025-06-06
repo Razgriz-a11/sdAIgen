@@ -1,9 +1,9 @@
 # ~ download.py | by ANXETY ~
 
 from webui_utils import handle_setup_timer    # WEBUI
-from CivitaiAPI import CivitAiAPI             # CivitAI API
-from Manager import m_download                # Every Download
-import json_utils as js                       # JSON
+from CivitaiAPI import CivitAiAPI            # CivitAI API
+from Manager import m_download                 # Every Download
+import json_utils as js                        # JSON
 
 from IPython.display import clear_output
 from IPython.utils import capture
@@ -42,12 +42,12 @@ WEBUI = js.read(SETTINGS_PATH, 'WEBUI.webui_path')
 
 # Text Colors (\033)
 class COLORS:
-    R  =  "\033[31m"     # Red
-    G  =  "\033[32m"     # Green
-    Y  =  "\033[33m"     # Yellow
-    B  =  "\033[34m"     # Blue
-    lB =  "\033[36;1m"   # lightBlue
-    X  =  "\033[0m"      # Reset
+    R  =  "\033[31m"      # Red
+    G  =  "\033[32m"      # Green
+    Y  =  "\033[33m"      # Yellow
+    B  =  "\033[34m"      # Blue
+    lB =  "\033[36;1m"    # lightBlue
+    X  =  "\033[0m"       # Reset
 
 COL = COLORS
 
@@ -201,7 +201,7 @@ if not os.path.exists(WEBUI):
     print(f"⌚ Unpacking Stable Diffusion... | WEBUI: {COL.B}{UI}{COL.X}", end='')
 
     ipyRun('run', f"{SCRIPTS}/UIs/{UI}.py")
-    handle_setup_timer(WEBUI, start_timer)		# Setup timer (for timer-extensions)
+    handle_setup_timer(WEBUI, start_timer)        # Setup timer (for timer-extensions)
 
     install_time = time.time() - start_install
     minutes, seconds = divmod(int(install_time), 60)
@@ -455,6 +455,8 @@ def _extract_filename(url):
     if match := re.search(r'\[(.*?)\]', url):
         return match.group(1)
     if any(d in urlparse(url).netloc for d in ["civitai.com", "drive.google.com"]):
+        # For Civitai and Google Drive, the filename is often handled by the API/gdown,
+        # or it's inferred later. Return None to indicate no explicit filename from URL.
         return None
     return Path(urlparse(url).path).name
 
@@ -492,8 +494,37 @@ def download(line):
             except Exception as e:
                 print(f"\n> Download error: {e}")
         else:
-            url, dst_dir, file_name = url.split()
-            manual_download(url, dst_dir, file_name)
+            # Handle direct URLs that don't have a prefix or specific structure
+            # Attempt to extract filename from URL if not provided
+            parsed_url = urlparse(url)
+            file_name = Path(parsed_url.path).name if not filename else filename
+            
+            # Default destination directory if none is specified
+            # You might want to define a 'default_download_dir' constant at the top
+            default_download_dir = HOME / 'downloads' 
+            os.makedirs(default_download_dir, exist_ok=True) # Ensure it exists
+            
+            # If the URL already contains a destination directory (e.g., "url /path/to/dir filename"), use it
+            # Otherwise, use the default_download_dir
+            parts = url.split()
+            if len(parts) == 3: # Assuming format "url dst_dir filename"
+                url_to_download, dst_dir, file_name = parts
+            elif len(parts) == 2: # Assuming format "url filename" (downloads to current directory)
+                url_to_download, file_name = parts
+                dst_dir = Path.cwd() # Or default_download_dir
+            else: # Just a URL, infer filename and use default dir
+                url_to_download = url
+                dst_dir = default_download_dir
+                if not file_name: # If filename was not extracted by _extract_filename initially
+                    file_name = Path(urlparse(url_to_download).path).name
+                    if not file_name: # Fallback if path has no name (e.g., root URL)
+                         file_name = "downloaded_file" + ('.bin' if not re.search(r'\.[a-zA-Z0-9]+$', file_name) else '') # Add a generic extension if none
+            
+            # Ensure file_name has an extension if it's a direct URL without one
+            if '.' not in file_name and '.' in Path(url_to_download).name:
+                file_name = file_name + Path(url_to_download).name.split('.')[-1]
+
+            manual_download(url_to_download, dst_dir, file_name)
 
     _unpack_zips()
 
@@ -503,20 +534,30 @@ def manual_download(url, dst_dir, file_name=None, prefix=None):
 
     if 'civitai' in url:
         api = CivitAiAPI(civitai_token)
-        if not (data := api.validate_download(url, file_name)):
-            return
+        # It's crucial to handle the potential error from validate_download here
+        data = api.validate_download(url, file_name)
+        if not data: # If validate_download failed or returned None
+            print(f"Skipping Civitai download due to validation error for URL: {url}")
+            return # Exit the function for this URL
 
         model_type, file_name = data.model_type, data.model_name    # Type, name
         clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL
-        image_url, image_name = data.image_url, data.image_name     # Img_URL, Img_Name
+        image_url, image_name = data.image_url, data.image_name    # Img_URL, Img_Name
 
         # Download preview images
         if image_url and image_name:
             m_download(f"{image_url} {dst_dir} {image_name}")
 
     elif any(s in url for s in ('github', 'huggingface.co')):
+        # For Hugging Face/GitHub, ensure filename has extension
         if file_name and '.' not in file_name:
-            file_name += f".{clean_url.split('.')[-1]}"
+            # Attempt to get extension from the clean_url
+            ext_match = re.search(r'\.([a-zA-Z0-9]+)(?:\?.*)?$', clean_url)
+            if ext_match:
+                file_name += f".{ext_match.group(1)}"
+            else:
+                # Fallback if no extension found in clean_url
+                print(f"Warning: Could not determine extension for {file_name}. Download might proceed without one.")
 
     # Formatted info output
     format_output(clean_url, dst_dir, file_name, image_url, image_name)
