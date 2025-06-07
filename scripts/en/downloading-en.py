@@ -525,30 +525,43 @@ def manual_download(url, dst_dir, file_name=None, prefix=None):
     clean_url = url
     image_url, image_name = None, None
 
-    # Civitai: Use API to get the correct filename and metadata
-    if 'civitai' in url:
+    # --- START OF CHANGE ---
+    # More specific check for Civitai URLs to avoid backend/direct links.
+    # It should only process main site URLs, not direct asset links from other subdomains.
+    parsed_url = urlparse(url)
+    is_api_processable_civitai = ('civitai.com' in parsed_url.netloc and 'orchestration' not in parsed_url.netloc)
+
+    if is_api_processable_civitai:
+    # --- END OF CHANGE ---
         api = CivitAiAPI(civitai_token)
         if not (data := api.validate_download(url, file_name)):
-            return
-        
-        file_name = data.model_name  # This is the TRUE filename from the API
-        clean_url, url = data.clean_url, data.download_url
-        image_url, image_name = data.image_url, data.image_name
+            # If API fails, we assume it's a direct link and proceed, rather than stopping.
+            print(f"⚠️ Civitai API validation failed. Treating as a direct download.")
+        else:
+            file_name = data.model_name  # This is the TRUE filename from the API
+            clean_url, url = data.clean_url, data.download_url
+            image_url, image_name = data.image_url, data.image_name
 
-        if image_url and image_name:
-            m_download(f"{image_url} {dst_dir} {image_name}")
+            if image_url and image_name:
+                m_download(f"{image_url} {dst_dir} {image_name}")
 
     # If filename is still unknown or generic, try to get it from headers
+    # A generic name might not have a file extension.
     if not file_name or '.' not in file_name:
-        print(f"\n🔍 Filename is ambiguous. Checking headers for: {clean_url}")
+        # Avoid printing this for every single model, only when necessary.
+        if detailed_download == 'on':
+            print(f"\n🔍 Filename is ambiguous. Checking headers for: {clean_url}")
+            
         header_filename = _get_filename_from_headers(clean_url)
         if header_filename:
-            print(f"📄 Found filename in header: {header_filename}")
+            if detailed_download == 'on':
+                print(f"📄 Found filename in header: {header_filename}")
             file_name = header_filename
         elif not file_name:
             # Final fallback to URL path if all else fails
             file_name = os.path.basename(urlparse(clean_url).path)
-            print(f"⚠️ Could not determine filename from headers. Falling back to URL path: {file_name}")
+            if detailed_download == 'on':
+                print(f"⚠️ Could not determine filename from headers. Falling back to URL path: {file_name}")
 
     # Formatted info output
     format_output(clean_url, dst_dir, file_name, image_url, image_name)
