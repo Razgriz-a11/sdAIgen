@@ -156,11 +156,6 @@ if venv_needs_reinstall:
     # Update latest UI version...
     js.update(SETTINGS_PATH, 'WEBUI.latest', current_ui)
 
-# if not os.path.exists(VENV):
-#     print('♻️ Installing VENV, this will take some time...')
-#     setup_venv()
-#     clear_output()
-
 ## ================ loading settings V5 ==================
 
 def load_settings(path):
@@ -227,16 +222,12 @@ if latest_webui or latest_extensions:
         ## Update Webui
         if latest_webui:
             CD(WEBUI)
-            # ipySys('git restore .')
-            # ipySys('git pull -X theirs --rebase --autostash')
-
             ipySys('git stash push --include-untracked')
             ipySys('git pull --rebase')
             ipySys('git stash pop')
 
         ## Update extensions
         if latest_extensions:
-            # ipySys('{\'for dir in \' + WEBUI + \'/extensions/*/; do cd \\'$dir\\' && git reset --hard && git pull; done\'}')
             for entry in os.listdir(f"{WEBUI}/extensions"):
                 dir_path = f"{WEBUI}/extensions/{entry}"
                 if os.path.isdir(dir_path):
@@ -459,11 +450,7 @@ def _extract_filename(url, default_filename=None):
     """
     parsed_url = urlparse(url)
 
-    # 1. Check for filename embedded in URL (e.g., [modelname.safetensors])
-    if match := re.search(r'\[(.*?)\]', url):
-        return unquote(match.group(1))
-
-    # 2. Try to get filename from Content-Disposition header for general URLs
+    # 1. Try to get filename from Content-Disposition header for general URLs
     try:
         with requests.head(url, allow_redirects=True, timeout=5) as r:
             r.raise_for_status()
@@ -477,8 +464,13 @@ def _extract_filename(url, default_filename=None):
     except requests.exceptions.RequestException:
         pass # Silently fail if head request doesn't work
 
+    # 2. Special handling for Civitai orchestration links which often contain the filename
+    if 'orchestration.civitai.com' in url:
+        path_name = Path(parsed_url.path).name
+        if path_name and '.' in path_name: # Check if it looks like a filename
+            return unquote(path_name)
+
     # 3. Infer filename from URL path for non-Civitai/Google Drive URLs
-    #    For Civitai/Google Drive, we might want to let the API handle the name if no explicit name is given
     if not any(d in parsed_url.netloc for d in ["civitai.com", "drive.google.com"]):
         path = Path(parsed_url.path)
         if path.name:
@@ -488,9 +480,10 @@ def _extract_filename(url, default_filename=None):
                 return unquote(path.name)
             elif default_filename:
                 return default_filename
-
+    
     # If no specific filename is found or inferred, return None to let the downloader decide or prompt.
     return default_filename
+
 
 def _unpack_zips():
     """Recursively extract and delete all .zip files in PREFIX_MAP directories."""
@@ -506,116 +499,173 @@ def _unpack_zips():
 # Download Core
 
 def _process_download_link(link):
-    """Processes a download link, splitting prefix, URL, and filename."""
+    """
+    Processes a download link and returns a dictionary with parsed information.
+    Returns:
+        dict: {'type': 'prefixed' or 'civitai_api' or 'generic', 'url': str, 'dst_dir': str, 'filename': str or None}
+    """
     original_link = link
-    link = _clean_url(link)
-    
-    # Check if a specific filename is provided in the URL
     explicit_filename = None
+
+    # 1. Check for filename embedded in URL (e.g., [modelname.safetensors])
     if match := re.search(r'\[(.*?)\]', original_link):
         explicit_filename = unquote(match.group(1))
         # Remove the filename tag from the URL part for further processing
-        link = re.sub(r'\[.*?\]', '', link)
+        link_without_tag = re.sub(r'\[.*?\]', '', original_link).strip()
+    else:
+        link_without_tag = original_link.strip()
 
-    parts = link.split(':', 1)
+    # 2. Special handling for Civitai Model page URLs that require API (not direct orchestration links)
+    if 'civitai.com/models' in link_without_tag and 'orchestration.civitai.com' not in link_without_tag:
+        return {'type': 'civitai_api', 'url': _clean_url(link_without_tag), 'dst_dir': None, 'filename': explicit_filename}
+
+    # 3. Try to parse as prefixed URL (e.g., "model:http://example.com/file")
+    parts = link_without_tag.split(':', 1)
     if len(parts) > 1 and parts[0] in PREFIX_MAP:
         prefix = parts[0]
-        url = parts[1].strip()
-        # Use explicit_filename if present, otherwise try to infer from the URL itself
+        url = _clean_url(parts[1].strip())
+        dst_dir, _ = PREFIX_MAP[prefix]
         filename = explicit_filename if explicit_filename else _extract_filename(url)
-        return prefix, url, filename
-    
-    # Generic URL without a prefix
-    # If the URL is provided directly as "url dst_dir filename"
-    # We expect 'url dst_dir filename' or 'url dst_dir'
-    parts = original_link.split(' ')
-    if len(parts) >= 2: # At least URL and destination directory
-        url = _clean_url(parts[0])
-        dst_dir = parts[1]
-        filename = None
-        if len(parts) > 2: # Filename provided
-            filename = parts[2]
-        else: # Try to extract filename from URL if not provided
+        return {'type': 'prefixed', 'prefix': prefix, 'url': url, 'dst_dir': dst_dir, 'filename': filename}
+
+    # 4. Try to parse as generic URL with specified destination and optional filename (e.g., "http://example.com/file /path/to/save filename.ext")
+    space_separated_parts = link_without_tag.split(' ')
+    if len(space_separated_parts) >= 2 and space_separated_parts[0].startswith('http'):
+        url = _clean_url(space_separated_parts[0])
+        dst_dir = space_separated_parts[1]
+        filename = explicit_filename # Prioritize explicit filename from tag
+
+        if not filename and len(space_separated_parts) > 2: # If no explicit filename from tag, check if it's given after dst_dir
+            filename = space_separated_parts[2]
+        
+        if not filename: # If still no filename, try to infer from URL
             filename = _extract_filename(url)
-        return None, url, filename, dst_dir
+
+        return {'type': 'generic', 'url': url, 'dst_dir': dst_dir, 'filename': filename}
     
-    # Fallback for simple URL without specified destination or filename
-    return None, link, explicit_filename, None
+    # 5. Fallback to generic URL with no specified destination (m_download will handle this)
+    if original_link.startswith('http'):
+        url = _clean_url(original_link)
+        filename = explicit_filename if explicit_filename else _extract_filename(url)
+        return {'type': 'generic', 'url': url, 'dst_dir': None, 'filename': filename}
+
+    return {'type': 'invalid'}
 
 
 def download(line):
     """Downloads files from comma-separated links, processes prefixes, and unpacks zips post-download."""
     for link in filter(None, map(str.strip, line.split(','))):
-        processed_data = _process_download_link(link)
+        parsed_info = _process_download_link(link)
 
-        if len(processed_data) == 3: # Prefixed URL (prefix, url, filename)
-            prefix, url, filename = processed_data
+        download_successful = False # Flag to track if download was initiated
+
+        if parsed_info['type'] == 'civitai_api':
+            url = parsed_info['url']
+            file_name = parsed_info['filename'] # This would be the explicit filename from tag if provided
+            try:
+                # For Civitai API models, we need to know the target directory
+                # If not provided via prefix, use a sensible default (e.g., model_dir or lora_dir etc.)
+                # We can't determine this from the _process_download_link alone for civitai_api type
+                # So we pass None and let manual_download try to determine it from API data or default.
+                manual_download_civitai_api(url, file_name=file_name)
+                download_successful = True
+            except Exception as e:
+                print(f"\n> Civitai API Download error for {link}: {e}")
+
+        elif parsed_info['type'] == 'prefixed':
+            prefix = parsed_info['prefix']
+            url = parsed_info['url']
+            dst_dir = parsed_info['dst_dir']
+            filename = parsed_info['filename']
+
             if prefix == 'extension':
                 extension_repo.append((url, filename))
+                download_successful = True # Treated as "downloaded" for this context
                 continue
-            dir_path, _ = PREFIX_MAP[prefix]
             try:
-                manual_download(url, dir_path, filename, prefix)
+                manual_download_generic(url, dst_dir, filename)
+                download_successful = True
             except Exception as e:
-                print(f"\n> Download error: {e}")
-        elif len(processed_data) == 4: # Generic URL (None, url, filename, dst_dir)
-            _, url, filename, dst_dir = processed_data
-            if not dst_dir: # If destination is not specified, prompt or use a default
-                print(f"Error: Destination directory not specified for URL: {url}")
-                continue
-            manual_download(url, dst_dir, filename)
+                print(f"\n> Prefixed Download error for {link}: {e}")
+
+        elif parsed_info['type'] == 'generic':
+            url = parsed_info['url']
+            dst_dir = parsed_info['dst_dir']
+            filename = parsed_info['filename']
+
+            if not dst_dir:
+                # If no destination is specified for a generic URL, default to HOME or a general downloads folder
+                dst_dir = str(HOME) # Or str(HOME / 'downloads') if you have one
+                print(f"Warning: Destination directory not specified for generic URL: {url}. Defaulting to {dst_dir}.")
+            try:
+                manual_download_generic(url, dst_dir, filename)
+                download_successful = True
+            except Exception as e:
+                print(f"\n> Generic Download error for {link}: {e}")
         else:
-            print(f"Skipping malformed download link: {link}")
+            print(f"Skipping malformed or unsupported download link: {link}")
+            
+        # If a download was attempted and failed, do not proceed to unpack zips for it
+        # (Though _unpack_zips is called once at the end anyway, this is more for immediate feedback)
+        # If download_successful is False, it means the link was skipped or failed.
+        # This part of the loop processes each link. _unpack_zips runs once all links are processed.
 
 
     _unpack_zips()
 
+def manual_download_civitai_api(url, file_name=None):
+    """Handles Civitai API based downloads."""
+    api = CivitAiAPI(civitai_token)
+    if not (data := api.validate_download(url, file_name)):
+        # If API validation fails, it's a significant issue for this type of URL.
+        # We should not fall back to generic download here, as it implies the model page URL is invalid.
+        raise ValueError(f"Civitai API validation failed for model URL: {url}")
 
-def manual_download(url, dst_dir, file_name=None, prefix=None):
-    clean_url = url
-    image_url, image_name = None, None
+    model_type, file_name = data.model_type, data.model_name
+    clean_url, download_url = data.clean_url, data.download_url
+    image_url, image_name = data.image_url, data.image_name
 
-    # Handle Civitai API download
-    if 'civitai' in url:
-        api = CivitAiAPI(civitai_token)
-        if not (data := api.validate_download(url, file_name)):
-            print(f"Warning: Civitai API validation failed for {url}. Attempting generic download.")
-            # Fallback to generic download if Civitai API fails
-            # Ensure filename is still determined for generic download
-            final_filename = _extract_filename(url, default_filename=file_name)
-            format_output(clean_url, dst_dir, final_filename, image_url, image_name)
-            m_download(f"{url} {dst_dir} {final_filename or ''}", log=True)
-            return
+    # Determine destination directory based on model_type from Civitai API
+    # This is a critical part where we map Civitai's model_type to our local directory
+    dst_dir = None
+    if model_type == 'Checkpoint':
+        dst_dir = model_dir
+    elif model_type == 'LORA':
+        dst_dir = lora_dir
+    elif model_type == 'TextualInversion':
+        dst_dir = embed_dir
+    elif model_type == 'VAE':
+        dst_dir = vae_dir
+    elif model_type == 'Controlnet': # Assuming Civitai returns this
+        dst_dir = control_dir
+    # Add other mappings as needed
+    
+    if not dst_dir:
+        print(f"Warning: Could not map Civitai model type '{model_type}' to a known local directory. Defaulting to {model_dir}.")
+        dst_dir = model_dir # Fallback if model type isn't explicitly mapped
 
-        model_type, file_name = data.model_type, data.model_name    # Type, name
-        clean_url, url = data.clean_url, data.download_url          # Clean_URL, URL
-        image_url, image_name = data.image_url, data.image_name    # Img_URL, Img_Name
+    # Download preview images
+    if image_url and image_name:
+        m_download(f"{image_url} {dst_dir} {image_name}")
 
-        # Download preview images
-        if image_url and image_name:
-            m_download(f"{image_url} {dst_dir} {image_name}")
-
-    # For Hugging Face or Github, and generic URLs, infer filename if not explicitly provided
-    elif any(s in url for s in ('github', 'huggingface.co')) or not file_name:
-        # If file_name is not provided from _process_download_link (e.g., for direct URLs or inference failed)
-        # or if it's just a number from civitai.com/api/download/1234
-        if not file_name or (re.fullmatch(r'\d+', Path(urlparse(url).path).name) and 'civitai.com' in url):
-            inferred_filename = _extract_filename(url)
-            if inferred_filename:
-                file_name = inferred_filename
-            else:
-                # If no filename can be inferred, try to use a default or prompt
-                print(f"Warning: Could not infer filename for {url}. Proceeding without a specific name.")
-                # m_download can often infer the name from the URL if not provided.
-                # So we'll pass an empty string for file_name to indicate "let m_download decide".
-                file_name = '' # Pass empty string to m_download to let it handle filename if not found
-
-    # Formatted info output
     format_output(clean_url, dst_dir, file_name, image_url, image_name)
+    m_download(f"{download_url} {dst_dir} {file_name or ''}", log=True)
 
-    # Downloading
-    # The m_download function is expected to handle the actual download.
-    # If file_name is an empty string, m_download should ideally infer it.
+
+def manual_download_generic(url, dst_dir, file_name=None):
+    """Handles generic HTTP/HTTPS downloads (including direct Civitai orchestration links)."""
+    clean_url = url # URL is already cleaned by _process_download_link
+
+    # If file_name is still None or an empty string, try to infer it.
+    if not file_name:
+        inferred_filename = _extract_filename(url)
+        if inferred_filename:
+            file_name = inferred_filename
+        else:
+            print(f"Warning: Could not infer filename for {url}. Proceeding without a specific name. `m_download` might infer it.")
+            file_name = '' # Pass empty string to m_download to let it handle filename if not found
+
+    format_output(clean_url, dst_dir, file_name, image_url=None, image_name=None)
     m_download(f"{url} {dst_dir} {file_name or ''}", log=True)
 
 
@@ -666,6 +716,7 @@ def handle_submodels(selection, num_selection, model_dict, dst_dir, base_url, in
     elif selection in model_dict:
         selected.extend(model_dict[selection])
 
+    unique_models = {}
     if num_selection:
         max_num = len(model_dict)
         for num in _parse_selection_numbers(num_selection, max_num):
@@ -673,7 +724,6 @@ def handle_submodels(selection, num_selection, model_dict, dst_dir, base_url, in
                 name = list(model_dict.keys())[num - 1]
                 selected.extend(model_dict[name])
 
-    unique_models = {}
     for model in selected:
         name = model.get('name') or os.path.basename(model['url'])
         if not inpainting_model and "inpainting" in name:
@@ -717,21 +767,31 @@ def _process_lines(lines):
         # Normalise the delimiters and process each URL
         normalized_line = re.sub(r'[\s,]+', ',', line.strip())
         for url_entry in normalized_line.split(','):
-            url = url_entry.split('#')[0].strip()
-            if not url.startswith('http'):
+            # Check if url_entry itself is a valid URL before proceeding
+            if not url_entry.strip().startswith('http'):
                 continue
+                
+            # Extract explicit filename tag if present in url_entry
+            explicit_filename = None
+            if match := re.search(r'\[(.*?)\]', url_entry):
+                explicit_filename = unquote(match.group(1))
+                # Remove the filename tag from the URL part for uniqueness check and actual download URL
+                url_without_tag = re.sub(r'\[.*?\]', '', url_entry).strip()
+            else:
+                url_without_tag = url_entry.strip()
 
-            # The _extract_filename function already handles the [filename] part
-            # So, we pass the original url_entry to it
-            filename_from_tag = _extract_filename(url_entry)
-            clean_url_without_tag = re.sub(r'\[.*?\]', '', url) # Remove explicit filename tag for uniqueness check
-
-            entry_key = (current_tag, clean_url_without_tag)   # Uniqueness is determined by a pair (tag, URL)
+            clean_url_for_key = _clean_url(url_without_tag)
+            
+            entry_key = (current_tag, clean_url_for_key)   # Uniqueness is determined by a pair (tag, URL)
 
             if entry_key not in processed_entries:
-                formatted_url = f"{current_tag}:{clean_url_without_tag}"
-                if filename_from_tag:
-                    formatted_url += f"[{filename_from_tag}]"
+                final_filename = explicit_filename
+                if not final_filename: # If no explicit filename, try to infer
+                    final_filename = _extract_filename(clean_url_for_key)
+
+                formatted_url = f"{current_tag}:{clean_url_for_key}"
+                if final_filename:
+                    formatted_url += f"[{final_filename}]"
 
                 result_urls.append(formatted_url)
                 processed_entries.add(entry_key)
@@ -771,16 +831,22 @@ file_urls = [f"{f}.txt" if not f.endswith('.txt') else f for f in custom_file_ur
 prefixed_urls = []
 for p, u_list in zip(PREFIX_MAP.keys(), urls_sources): # Iterate over keys to get prefixes, and corresponding URL lists
     if u_list:
-        for u in u_list.replace(',', '').split():
+        for u_entry in u_list.replace(',', '').split():
             # If the URL already contains [filename], don't try to add it again.
-            if '[' not in u and ']' not in u:
-                filename = _extract_filename(u)
+            if '[' not in u_entry and ']' not in u_entry:
+                clean_u = _clean_url(u_entry)
+                filename = _extract_filename(clean_u)
                 if filename:
-                    prefixed_urls.append(f"{p}:{u}[{filename}]")
+                    prefixed_urls.append(f"{p}:{clean_u}[{filename}]")
                 else:
-                    prefixed_urls.append(f"{p}:{u}")
+                    prefixed_urls.append(f"{p}:{clean_u}")
             else:
-                prefixed_urls.append(f"{p}:{u}")
+                # If it already has a tag, just clean the URL part and keep the tag as is.
+                # _process_download_link will handle extracting the filename from the tag.
+                clean_u_part = re.sub(r'\[.*?\]', '', u_entry).strip()
+                clean_u_part = _clean_url(clean_u_part)
+                prefixed_urls.append(f"{p}:{clean_u_part}[{re.search(r'\[(.*?)\]', u_entry).group(1)}]")
+
 
 line += ', ' + ', '.join(prefixed_urls + [process_file_downloads(file_urls, empowerment_output)])
 
