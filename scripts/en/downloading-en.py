@@ -773,8 +773,9 @@ def _process_lines(lines):
                 
             # Extract explicit filename tag if present in url_entry
             explicit_filename = None
-            if match := re.search(r'\[(.*?)\]', url_entry):
-                explicit_filename = unquote(match.group(1))
+            match_tag = re.search(r'\[(.*?)\]', url_entry) # Use a new variable to avoid confusion
+            if match_tag:
+                explicit_filename = unquote(match_tag.group(1))
                 # Remove the filename tag from the URL part for uniqueness check and actual download URL
                 url_without_tag = re.sub(r'\[.*?\]', '', url_entry).strip()
             else:
@@ -845,7 +846,15 @@ for p, u_list in zip(PREFIX_MAP.keys(), urls_sources): # Iterate over keys to ge
                 # _process_download_link will handle extracting the filename from the tag.
                 clean_u_part = re.sub(r'\[.*?\]', '', u_entry).strip()
                 clean_u_part = _clean_url(clean_u_part)
-                prefixed_urls.append(f"{p}:{clean_u_part}[{re.search(r'\[(.*?)\]', u_entry).group(1)}]")
+                
+                # Extract the filename from the tag into a variable first to avoid f-string syntax error
+                match = re.search(r'\[(.*?)\]', u_entry)
+                if match: # This should always be true if we are in this 'else' block
+                    extracted_filename_from_tag = match.group(1)
+                    prefixed_urls.append(f"{p}:{clean_u_part}[{extracted_filename_from_tag}]")
+                else:
+                    # Fallback in case the regex somehow fails (shouldn't happen given the outer 'else' condition)
+                    prefixed_urls.append(f"{p}:{clean_u_part}")
 
 
 line += ', ' + ', '.join(prefixed_urls + [process_file_downloads(file_urls, empowerment_output)])
