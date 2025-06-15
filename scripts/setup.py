@@ -13,7 +13,7 @@ import time
 import json
 import sys
 import os
-
+import subprocess # Added for running shell commands
 
 nest_asyncio.apply()  # Async support for Jupyter
 
@@ -67,6 +67,48 @@ FILE_STRUCTURE = {
 
 # =================== UTILITY FUNCTIONS ====================
 
+def install_external_dependencies():
+    """
+    Checks for and installs required external tools (aria2c, gdown).
+    This is crucial for environments like Colab/Kaggle where these might not be
+    pre-installed, ensuring the script's core functionality.
+    """
+    print("Checking for required external tools (aria2c, gdown)...")
+    try:
+        # Check for aria2c and install if not found
+        # Using 'which' to check if the command exists in PATH
+        if subprocess.run(['which', 'aria2c'], capture_output=True).returncode != 0:
+            print("aria2c not found. Attempting to install aria2...")
+            # Update apt-get first to ensure latest package info
+            subprocess.run(['apt-get', 'update', '-y'], check=True, capture_output=True)
+            # Install aria2
+            subprocess.run(['apt-get', 'install', '-y', 'aria2'], check=True, capture_output=True)
+            print("aria2c installed successfully.")
+        else:
+            print("aria2c already installed.")
+
+        # Check for gdown and install if not found
+        if subprocess.run(['which', 'gdown'], capture_output=True).returncode != 0:
+            print("gdown not found. Attempting to install gdown via pip...")
+            # Use sys.executable to ensure pip associated with the current Python environment is used
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'gdown'], check=True, capture_output=True)
+            print("gdown installed successfully.")
+        else:
+            print("gdown already installed.")
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error during dependency installation: {e}")
+        print(f"Command failed: {' '.join(e.cmd)}")
+        if e.stdout:
+            print(f"Stdout: {e.stdout.decode().strip()}")
+        if e.stderr:
+            print(f"Stderr: {e.stderr.decode().strip()}")
+        print("Please ensure you have necessary permissions or try installing manually.")
+    except Exception as e:
+        print(f"An unexpected error occurred during dependency check/installation: {e}")
+    print("External tool check complete.")
+
+
 def _install_deps() -> bool:
     """Check if all required dependencies are installed (aria2 and gdown)."""
     try:
@@ -108,15 +150,18 @@ def save_env_to_json(data: dict, filepath: Path) -> None:
 def _clear_module_cache(modules_folder = None):
     """Clear module cache for modules in specified folder or default modules folder."""
     target_folder = Path(modules_folder) if modules_folder else MODULES_FOLDER
-    target_folder = target_folder.resolve()   # Full absolute path
+    target_folder = target_folder.resolve()    # Full absolute path
 
     for module_name, module in list(sys.modules.items()):
         if hasattr(module, "__file__") and module.__file__:
             module_path = Path(module.__file__).resolve()
             try:
+                # Check if the module's path is under the target folder
                 if target_folder in module_path.parents:
                     del sys.modules[module_name]
             except (ValueError, RuntimeError):
+                # Handle cases where module_path.parents might not be directly comparable
+                # or module object is problematic during iteration
                 continue
 
     importlib.invalidate_caches()
@@ -151,13 +196,14 @@ def parse_fork_arg(fork_arg):
 
 def create_environment_data(env, lang, fork_user, fork_repo, branch):
     """Create environment data dictionary."""
-    install_deps = _install_deps()
+    # This now reflects if the dependencies are available AFTER attempts to install them
+    install_deps_status = _install_deps()
     start_timer = _get_start_timer()
 
     return {
         "ENVIRONMENT": {
             "env_name": env,
-            "install_deps": install_deps,
+            "install_deps": install_deps_status,
             "fork": f"{fork_user}/{fork_repo}",
             "branch": branch,
             "lang": lang,
@@ -204,7 +250,7 @@ async def download_file(session: aiohttp.ClientSession, url: str, path: Path) ->
     """Download and save single file with error handling."""
     try:
         async with session.get(url) as resp:
-            resp.raise_for_status()
+            resp.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(await resp.read())
             return (True, url, path, None)
@@ -222,12 +268,14 @@ async def download_files_async(lang, fork_user, fork_repo, branch, log_errors):
         tasks = [download_file(session, url, path) for url, path in file_list]
         errors = []
 
+        # Use tqdm for progress bar during file downloads
         for future in tqdm(asyncio.as_completed(tasks), total=len(tasks),
-                          desc="Downloading files", unit="file"):
+                           desc="Downloading files", unit="file"):
             success, url, path, error = await future
             if not success:
                 errors.append((url, path, error))
 
+        # Clear the output after download progress, useful in notebooks
         clear_output()
 
         if log_errors and errors:
@@ -238,7 +286,11 @@ async def download_files_async(lang, fork_user, fork_repo, branch, log_errors):
 # ===================== MAIN EXECUTION =====================
 
 async def main_async(args=None):
-    """Entry point."""
+    """
+    Entry point for the script.
+    Handles environment detection, dependency installation,
+    file downloading, and setup.
+    """
     parser = argparse.ArgumentParser(description='ANXETY Download Manager')
     parser.add_argument('--lang', default=DEFAULT_LANG, help=f"Language to be used (default: {DEFAULT_LANG})")
     parser.add_argument('--branch', default=DEFAULT_BRANCH, help=f"Branch to download files from (default: {DEFAULT_BRANCH})")
@@ -246,28 +298,44 @@ async def main_async(args=None):
     parser.add_argument('-s', '--skip-download', action="store_true", help="Skip downloading files")
     parser.add_argument('-l', "--log", action="store_true", help="Enable logging of download errors")
 
+    # parse_known_args allows the script to run even if extra arguments are passed
+    # which is common in environments like Colab/Kaggle that might add their own args.
     args, _ = parser.parse_known_args(args)
 
-    env = detect_environment()
-    user, repo = parse_fork_arg(args.fork)   # GitHub: user/repo
+    # 1. Install necessary external system dependencies (like aria2c)
+    install_external_dependencies()
 
-    # download scripts files
+    # 2. Detect the current runtime environment
+    env = detect_environment()
+    user, repo = parse_fork_arg(args.fork)  # GitHub: user/repo
+
+    # 3. Download script files from GitHub
     if not args.skip_download:
         await download_files_async(args.lang, user, repo, args.branch, args.log)
 
+    # 4. Set up Python module paths and clear cache
     setup_module_folder()
+
+    # 5. Create environment data and save to settings file
     env_data = create_environment_data(env, args.lang, user, repo, args.branch)
     save_env_to_json(env_data, SETTINGS_PATH)
 
-    # Display info after setup
-    from _season import display_info
-    display_info(
-        env=env,
-        scr_folder=os.environ['scr_path'],
-        branch=args.branch,
-        lang=args.lang,
-        fork=args.fork
-    )
+    # 6. Display relevant information after setup is complete
+    # Importing _season here to ensure it's available after module setup
+    try:
+        from _season import display_info
+        display_info(
+            env=env,
+            scr_folder=os.environ['scr_path'],
+            branch=args.branch,
+            lang=args.lang,
+            fork=args.fork
+        )
+    except ImportError as e:
+        print(f"Could not import display_info from _season.py: {e}")
+        print("Please ensure _season.py was downloaded successfully.")
+
 
 if __name__ == "__main__":
+    # Run the main asynchronous function
     asyncio.run(main_async())
