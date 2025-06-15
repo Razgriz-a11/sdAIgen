@@ -181,11 +181,19 @@ def setup_module_folder(modules_folder = None):
 # =================== ENVIRONMENT SETUP ====================
 
 def detect_environment():
-    """Detect runtime environment."""
+    """
+    Detect runtime environment.
+    If no specific supported environment is found, it defaults to 'Generic/Unknown'.
+    """
+    detected_env = "Generic/Unknown" # Default value
     for var, name in SUPPORTED_ENVS.items():
         if var in os.environ:
-            return name
-    raise EnvironmentError(f"Unsupported environment. Supported: {', '.join(SUPPORTED_ENVS.values())}")
+            detected_env = name
+            break # Found a supported environment, no need to check further
+    
+    print(f"Detected Environment: {detected_env}") # Confirm what's detected
+    return detected_env
+
 
 def parse_fork_arg(fork_arg):
     """Parse fork argument into user/repo."""
