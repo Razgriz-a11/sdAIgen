@@ -216,7 +216,7 @@ def create_environment_data(env, lang, fork_user, fork_repo, branch):
             "branch": branch,
             "lang": lang,
             "home_path": os.environ['home_path'],
-            "scr_path": os.environ['scr_path'],
+            'scr_path': os.environ['scr_path'],
             "venv_path": os.environ['venv_path'],
             "settings_path": os.environ['settings_path'],
             "start_timer": start_timer,
