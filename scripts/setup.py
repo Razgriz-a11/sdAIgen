@@ -79,10 +79,9 @@ def install_external_dependencies():
         # Using 'which' to check if the command exists in PATH
         if subprocess.run(['which', 'aria2c'], capture_output=True).returncode != 0:
             print("aria2c not found. Attempting to install aria2...")
-            # Update apt-get first to ensure latest package info
-            subprocess.run(['apt-get', 'update', '-y'], check=True, capture_output=True)
-            # Install aria2
-            subprocess.run(['apt-get', 'install', '-y', 'aria2'], check=True, capture_output=True)
+            # Use 'sudo' for apt-get commands as they require root privileges
+            subprocess.run(['sudo', 'apt-get', 'update', '-y'], check=True, capture_output=True)
+            subprocess.run(['sudo', 'apt-get', 'install', '-y', 'aria2'], check=True, capture_output=True)
             print("aria2c installed successfully.")
         else:
             print("aria2c already installed.")
